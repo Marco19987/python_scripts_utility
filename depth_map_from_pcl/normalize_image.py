@@ -208,7 +208,6 @@ def normalize_depth_map(depth_map):
 
     return normalized_depth_map
 
-
 def resize_images_to_same_size(image1_array, image2_array):
     """
     Resize two images (given as numpy arrays) to the same size, based on the smaller dimensions of the two.
@@ -221,48 +220,72 @@ def resize_images_to_same_size(image1_array, image2_array):
     np.array: The resized first image.
     np.array: The resized second image.
     """
-    # Convert numpy arrays to PIL images
-    image_1 = Image.fromarray(image1_array)
-    image_2 = Image.fromarray(image2_array)
-    
     # Get the dimensions of the images
-    width_1, height_1 = image_1.size
-    width_2, height_2 = image_2.size
+    height_1, width_1 = image1_array.shape
+    height_2, width_2 = image2_array.shape
     
     dimensions = [width_1, height_1, width_2, height_2]
-    minimum = max(dimensions)
-    index_max = dimensions.index(minimum)
+    maximum = max(dimensions)
+    index_max = dimensions.index(maximum)
+    
     
     # Determine the new size based on the smaller dimensions
-    new_width = 0
-    new_height = 0
-    
     if index_max < 2:
         # Resize first image
         if index_max == 0:
             # Width
             new_height = height_2
             new_width = int((height_2 / height_1) * width_1)
+            resized_image = np.ones((new_height,new_width))*np.nan
+            disp = int(width_2/2)
+            for y in range(disp, disp+width_2):
+                for x in range(height_2):                    
+                    resized_image[x][y] = image2_array[x][y-disp]
         else:
             # Height
             new_width = width_2
             new_height = int((width_2 / width_1) * height_1)
-        resized_image = image_1.resize((new_width, new_height), Image.LANCZOS)
-        resized_image_1 = np.array(resized_image)
-        resized_image_2 = np.array(image_2)
+            resized_image = np.ones((new_height,new_width))*np.nan
+            disp = int(height_2/2)
+            for x in range(disp, disp+height_2):
+                for y in range(width_2):                    
+                    resized_image[x][y] = image2_array[x-disp][y]
+        
+        resized_image_1 = cv2.resize(image1_array, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+        resized_image_2 = resized_image
     else:
         # Resize second image
         if index_max == 2:
             # Width
             new_height = height_1
             new_width = int((height_1 / height_2) * width_2)
+            resized_image = np.ones((new_height,new_width))*np.nan
+            disp = int(width_1/2)
+            for y in range(disp, disp+width_1):
+                for x in range(height_1):                    
+                    resized_image[x][y] = image1_array[x][y-disp]
+
+
         else:
             # Height
             new_width = width_1
             new_height = int((width_1 / width_2) * height_2)
-        resized_image = image_2.resize((new_width, new_height), Image.LANCZOS)
-        resized_image_1 = np.array(image_1)
-        resized_image_2 = np.array(resized_image)
+            resized_image = np.ones((new_height,new_width))*np.nan
+            disp = int(height_1/2)
+            for x in range(disp, disp+height_1):
+                for y in range(width_1):                    
+                    resized_image[x][y] = image1_array[x-disp][y]
+                    
+
+
+            
+            
+        resized_image_2 = cv2.resize(image2_array, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+        resized_image_1 = resized_image
+    
+
+        
+
     
     return resized_image_1, resized_image_2
 
@@ -311,7 +334,7 @@ K = np.array([[focal_length_x, 0, principal_point_x],
 
 # Example initialization of extrinsic parameters (rotation and translation)
 quaternion = (1, 0, 1,1)  
-translation = np.array([0,0,800])
+translation = np.array([0,0,1200])
 
 
 Rt = getRtmatrix(translation, quaternion)
@@ -341,19 +364,25 @@ if vertices is not None:
     
     
     # second pose
-    #depth_map, object_pixels = generate_depth_map(vertices, K, Rt, image_dimensions)
+    translation2 = [0,0,400]
+    quaternion2 = [1,1,0,0]
+    Rt2 = getRtmatrix(translation2,quaternion2)
+    depth_map2, object_pixels2 = generate_depth_map(vertices, K, Rt2, image_dimensions)
+    obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
+    obj_depth_image2 = normalize_depth_map(obj_depth_image2)    
+    
+    
+    resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image2, obj_depth_image)
+    print(resized_image1_array.shape)
+    print(resized_image2_array.shape)
 
-    
-    
-    
-    
-    resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image, obj_depth_image)
-    
     cv2.imshow("Resized Image 1", resized_image1_array)
     cv2.imshow("Resized Image 2", resized_image2_array)
     
     # Display the depth map with only visible vertices
-    cv2.imshow("Depth Map", depth_map)
+    #cv2.imshow("Depth Map", depth_map)
+    cv2.imshow("Depth Map2", obj_depth_image2)
+
      
     #cv2.imshow("Depth Map ref", visible_vertices)
 
