@@ -38,9 +38,7 @@ def generate_depth_map(vertices, intrinsic_matrix, extrinsic_matrix, image_dimen
             	depth_map[yr,xr] = min(z,depth_map[yr,xr])
             	
             	
-
-    return depth_map, object_pixels
-            
+    return depth_map, object_pixels            
     
 def remove_occluded_points(depth_map,object_pixels):
     # Define neighborhood size
@@ -230,6 +228,8 @@ def resize_images_to_same_size(image1_array, image2_array):
     index_max = dimensions.index(maximum)
     print(dimensions)
     
+    image_resized_index = -1 # index that track the resized image
+    switch_images = False # if True switch images in the end
     
     # Determine the new size based on the smaller dimensions
     if index_max < 2:
@@ -238,57 +238,32 @@ def resize_images_to_same_size(image1_array, image2_array):
             # Width
             new_height = height_2
             new_width = int((height_2 / height_1) * width_1)
-            # resized_image = np.ones((new_height,new_width))*np.nan
-            # disp = 0
-            # if height_1 <= height_2:
-            #     disp = int(width_2/2)
-            # for y in range(disp, disp+width_2):
-            #     for x in range(height_2):                    
-            #         resized_image[x][y] = image2_array[x][y-disp]
+            
         else:
             # Height
             new_width = width_2
             new_height = int((width_2 / width_1) * height_1)
-            # resized_image = np.ones((new_height,new_width))*np.nan
-            # disp = 0
-            # if width_1 <= width_2:
-            #     disp = int(height_2/2)
-            # for x in range(disp, disp+height_2):
-            #     for y in range(width_2):                    
-            #         resized_image[x][y] = image2_array[x-disp][y]
+            
         
         resized_image_1 = cv2.resize(image1_array, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
         not_resized_image = image2_array
+        image_resized_index = 0 # image 1 resized
     else:
         # Resize second image
         if index_max == 2:
             # Width
             new_height = height_1
             new_width = int((height_1 / height_2) * width_2)
-            # print(new_width,new_height)
-            # resized_image = np.ones((new_height,new_width))*np.nan
-            # disp = 0
-            # if height_2 <= height_1:
-            #     disp = int(width_1/2)
-            # for y in range(disp, disp+width_1):
-            #     for x in range(height_1):                 
-            #         resized_image[x][y] = image1_array[x][y-disp]
-
-
         else:
             # Height
             new_width = width_1
             new_height = int((width_1 / width_2) * height_2)
-            # resized_image = np.ones((new_height,new_width))*np.nan
-            # disp = 0
-            # # if width_2 <= width_1:
-            #     disp = int(height_1/2)
-            # for x in range(disp, disp+height_1):
-            #     for y in range(width_1):                    
-            #         resized_image[x][y] = image1_array[x-disp][y]
+            
                     
         resized_image_1 = cv2.resize(image2_array, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
         not_resized_image = image1_array
+        image_resized_index = 1 # image 2 resized
+
         
     # resize the images to have the same dimensions
     res_height_1, res_width_1 = resized_image_1.shape
@@ -296,7 +271,11 @@ def resize_images_to_same_size(image1_array, image2_array):
         
     if res_height_1 == res_height_2 and res_width_1 == res_width_2:
         # the images have the same size
+        resized_image_1 = resized_image_1
         resized_image_2 = not_resized_image
+        if image_resized_index==1:
+            switch_images = True
+        
     else:
         if res_height_1 == res_height_2:
             # scale width
@@ -305,13 +284,15 @@ def resize_images_to_same_size(image1_array, image2_array):
             min_width_index = res_dim.index(min(res_dim))
             max_width_index = res_dim.index(max(res_dim))
             resized_image = np.ones((res_height_1,res_dim[max_width_index]))*np.nan
-            print("new image dime", res_height_1,res_dim[max_width_index])
             disp = int((res_dim[max_width_index]-res_dim[min_width_index])/2)
             for y in range(disp, disp+res_dim[min_width_index]):
                  for x in range(res_height_1):
                      resized_image[x][y] = tmp_image[min_width_index][x][y-disp]
             resized_image_1 = tmp_image[max_width_index]
             resized_image_2 = resized_image
+            if min_width_index == image_resized_index:
+                switch_images = True
+          
         else:
             # scale height
             tmp_image = [resized_image_1,not_resized_image]
@@ -325,6 +306,14 @@ def resize_images_to_same_size(image1_array, image2_array):
                     resized_image[x][y] = tmp_image[min_height_index][x-disp][y]
             resized_image_1 = tmp_image[max_height_index]
             resized_image_2 = resized_image
+            if min_height_index == image_resized_index:
+                switch_images = True
+                
+    if switch_images:
+        tmp = resized_image_2
+        resized_image_2 = resized_image_1
+        resized_image_1 = tmp
+            
 
     return resized_image_1, resized_image_2
 
@@ -355,41 +344,132 @@ def getRtmatrix(translation, quaternion):
     
     return Rt
 
-def orientation_cost_function(quaternion):
+def orientation_cost_function(euler_angles):
     
     translation2 = [0,0,0.5]
-    quaternion2 = quaternion
+    quaternion2 = euler_to_quaternion(euler_angles)
     Rt2 = getRtmatrix(translation2,quaternion2)
     depth_map2, object_pixels2 = generate_depth_map(vertices, K, Rt2, image_dimensions)
     obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
     obj_depth_image2 = normalize_depth_map(obj_depth_image2)    
-    resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image2, obj_depth_image)
+    resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
     
-    cv2.imshow("resized_image1 ", resized_image1_array)
-    cv2.imshow("resized_image2 ", resized_image2_array)
-    cv2.waitKey(0)
+    # cv2.imshow("resized_image1 ", resized_image1_array)
+    # cv2.imshow("resized_image2 ", resized_image2_array)
+    # cv2.waitKey(0)
     
     w1,h1 = obj_depth_image.shape
     w2,h2 = obj_depth_image2.shape
     
     aspect_ratio_1 = w1/h1
     aspect_ratio_2 = w2/h2
+    
+    
+    #   # Compute the cost as the sum of squared differences of non-NaN pixels
+    # mask = ~np.isnan(resized_image1_array) 
+    # mask2 = ~np.isnan(resized_image1_array) 
+    # #resized_image2_array[mask] = 5
+    # #mask = ~np.isnan(resized_image1_array) & ~np.isnan(resized_image2_array)
+    # #cost = np.nansum((resized_image1_array[mask] - resized_image2_array[mask]) ** 2)
+    # cost = np.nansum((resized_image1_array - resized_image2_array) ** 2)
+    # # cost = cost/(w1*h1)
+    # cpost = cost/(mask.size + mask2.size)
 
+    # #cost = cost/(resized_image1_array[mask].size)
+    # #cost = cost + (aspect_ratio_1-aspect_ratio_2)**2
     
 
     
     # Compute the cost as the sum of squared differences of non-NaN pixels
-    mask = ~np.isnan(resized_image1_array) & ~np.isnan(resized_image2_array)
-    cost = np.nansum((resized_image1_array[mask] - resized_image2_array[mask]) ** 2)
-    cost = cost/(resized_image1_array[mask].size)
-    cost = cost + (aspect_ratio_1-aspect_ratio_2)**2
-    print("quaternion", quaternion)
-    print("cost value", cost)
+    #mask = ~np.isnan(resized_image1_array) 
+    #mask2 = ~np.isnan(resized_image2_array) 
+    
+    # occupied_pixels = np.copy(resized_image1_array)
+    # occupied_pixels[mask] = 1
+    # occupied_pixels[~mask] = 0
+    
+    
+    # occupied_pixels_2 = np.copy(resized_image2_array)
+    # occupied_pixels_2[mask2] = 1
+    # occupied_pixels_2[~mask2] = 0
+    
+    # cv2.imshow("occupied_pixels", occupied_pixels)
+    # cv2.imshow("occupied_pixels2", occupied_pixels_2)
 
+    
+    # resized_image1_array[~mask] = 10
+    # resized_image2_array[~mask2] = 10
+    # #mask = ~np.isnan(resized_image1_array) & ~np.isnan(resized_image2_array)
+    # #cost = np.nansum((resized_image1_array[mask] - resized_image2_array[mask]) ** 2)
+    # cost = np.nansum((resized_image1_array - resized_image2_array) ** 2)
+    # #cost =  cost + np.sum((occupied_pixels-occupied_pixels_2)**2)
+    # cost = cost/(w1*h1)
+    # #cost = cost/(mask.size + mask2.size)
+
+    # #cost = cost/(resized_image1_array[mask].size)
+    # cost = 10*cost + 1*(aspect_ratio_1-aspect_ratio_2)**2
+
+    
+    w,h = resized_image1_array.shape
+    cost = 0
+    for i in range(w):
+        for j in range(h):
+            d1 = resized_image1_array[i][j]
+            d2 = resized_image2_array[i][j]
+                        
+            if math.isnan(d1) and math.isnan(d2):  
+                cost = cost + 0 # is good
+            else:
+                if math.isnan(d2) or math.isnan(d1):
+                    cost = cost + 0
+                else:
+                    #print(d1,d2,(d1-d2)**2)
+                    cost = cost + (d1-d2)**2
+    cost = cost/w*h
+    cost = cost + 1*(aspect_ratio_1-aspect_ratio_2)**2
+    
+    
+    print("euler_angles", euler_angles)
+    print("cost value", cost)
+    
     return cost
 
 def unit_quaternion_constraint(quaternion):
     return np.sum(np.square(quaternion)) - 1
+
+
+def euler_to_quaternion(euler_angles):
+    """
+    Convert Euler angles (roll, pitch, yaw) to a quaternion.
+    
+    Parameters:
+    roll : float
+        The roll (rotation around x-axis) in radians.
+    pitch : float
+        The pitch (rotation around y-axis) in radians.
+    yaw : float
+        The yaw (rotation around z-axis) in radians.
+    
+    Returns:
+    q : numpy array
+        The quaternion as [qx, qy, qz, qw].
+    """
+    # Compute the quaternion elements
+    
+    roll, pitch, yaw = euler_angles
+    cy = np.cos(yaw * 0.5)
+    sy = np.sin(yaw * 0.5)
+    cp = np.cos(pitch * 0.5)
+    sp = np.sin(pitch * 0.5)
+    cr = np.cos(roll * 0.5)
+    sr = np.sin(roll * 0.5)
+
+    qw = cr * cp * cy + sr * sp * sy
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+
+    return np.array([qx, qy, qz, qw])
 
 # Example initialization of intrinsic and extrinsic parameters
 focal_length_x = 610  # Focal length in pixels (along X-axis)
@@ -408,24 +488,27 @@ K = np.array([[focal_length_x, 0, principal_point_x],
 
 
 # Example initialization of extrinsic parameters (rotation and translation)
-quaternion = [0,0,0,1]  
-translation = np.array([0,0,0.5])
+euler_angles = [0,1,0] # radians - roll pitch and yaw
+
+quaternion = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
+translation = np.array([0,0,0.4])
 
 
 Rt = getRtmatrix(translation, quaternion)
 
 
 # Load file
-file_name = "cad_models/Lime.obj"  # Replace with the path to your PLY file
+file_name = "cad_models/banana.obj"  # Replace with the path to your PLY file
 #vertices, K, Rt, image_dimensions = read_ply_file(file_name)
 vertices, faces = read_obj_file(file_name)
-vertices = vertices*1
+vertices = vertices*0.01
 
 
 
 if vertices is not None:
     # Generate the depth map
     depth_map, object_pixels = generate_depth_map(vertices, K, Rt, image_dimensions)
+    cv2.imshow("dddd", depth_map)
     # Remove occluded points
     #visible_vertices = remove_occluded_points(depth_map,object_pixels) 
     
@@ -438,17 +521,21 @@ if vertices is not None:
     
     
     # Ottimizzazione della funzione di costo
-    initial_guess = [0, 0, 1, 0]
-    constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
-    result = minimize(orientation_cost_function, initial_guess,constraints=constraints)
-    #quaternion_optimized = result.x
+    initial_guess = [1,1,0]
+    # constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
+    bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
+
+    result = minimize(orientation_cost_function,initial_guess,method="SLSQP",
+                      options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True},
+                      bounds=bnds)#,constraints=constraints)
+    quaternion_optimized = euler_to_quaternion(result.x)
     
     
     
     # second pose
     translation2 = [0,0,0.5]
-    #quaternion2 = quaternion_optimized
-    quaternion2 = [0.88127318,0.39834127,0.14929647,0.20589413]
+    quaternion2 = quaternion_optimized
+    #quaternion2 = [ 0.12946097, -0.37395653,  0.08676202,  0.92386364]
     Rt2 = getRtmatrix(translation2,quaternion2)
     depth_map2, object_pixels2 = generate_depth_map(vertices, K, Rt2, image_dimensions)
     obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
