@@ -416,7 +416,7 @@ Rt = getRtmatrix(translation, quaternion)
 
 
 # Load file
-file_name = "Lime.obj"  # Replace with the path to your PLY file
+file_name = "cad_models/Lime.obj"  # Replace with the path to your PLY file
 #vertices, K, Rt, image_dimensions = read_ply_file(file_name)
 vertices, faces = read_obj_file(file_name)
 vertices = vertices*1

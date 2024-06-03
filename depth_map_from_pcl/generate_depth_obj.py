@@ -139,9 +139,9 @@ def backface_culling(vertices, faces, normals, extrinsic_matrix):
     # Apply extrinsic transformation to vertices
     transformed_vertices = np.dot(homogeneous_vertices, extrinsic_matrix.T)
     
-    #extrinsic_matrix.T[3,:] = np.array([0,0,0])
+    extrinsic_matrix.T[3,:] = np.array([0,0,0])
     #print(extrinsic_matrix.T)
-    #transformed_normals = np.dot(homogeneous_normals, extrinsic_matrix.T)
+    transformed_normals = np.dot(homogeneous_normals, extrinsic_matrix.T)
     #print(transformed_normals)
 
     # Iterate over each face
@@ -159,7 +159,7 @@ def backface_culling(vertices, faces, normals, extrinsic_matrix):
         vector_to_face = vertex0[:3]
 
         # Get the normal of the face
-        normal = normals[i]/np.linalg.norm(normals[i])
+        normal = transformed_normals[i]/np.linalg.norm(transformed_normals[i])
         print("vector to face",vector_to_face)
         print("normal",normal)
 
@@ -167,7 +167,7 @@ def backface_culling(vertices, faces, normals, extrinsic_matrix):
         dot_product = np.dot(normal, vector_to_face)
 
         # If the dot product is positive, the face is visible
-        print("dot_product",dot_product)
+        #print("dot_product",dot_product)
         if dot_product < 0:
             visible_vertices_index.extend([v0, v1, v2])
 
@@ -190,19 +190,19 @@ principal_point_x = 320  # Principal point offset along X-axis (in pixels)
 principal_point_y = 240  # Principal point offset along Y-axis (in pixels)
 
 # Example initialization of extrinsic parameters (rotation and translation)
-rotation_00 = 1.0  # Rotation element [0, 0] of the rotation matrix
-rotation_01 = 0.0  # Rotation element [0, 1] of the rotation matrix
+rotation_00 = 0.0  # Rotation element [0, 0] of the rotation matrix
+rotation_01 = 1.0  # Rotation element [0, 1] of the rotation matrix
 rotation_02 = 0.0  # Rotation element [0, 2] of the rotation matrix
 rotation_10 = 0.0  # Rotation element [1, 0] of the rotation matrix
-rotation_11 = 1.0  # Rotation element [1, 1] of the rotation matrix
-rotation_12 = 0.0  # Rotation element [1, 2] of the rotation matrix
-rotation_20 = 0.0  # Rotation element [2, 0] of the rotation matrix
+rotation_11 = 0.0  # Rotation element [1, 1] of the rotation matrix
+rotation_12 = 1.0  # Rotation element [1, 2] of the rotation matrix
+rotation_20 = 1.0  # Rotation element [2, 0] of the rotation matrix
 rotation_21 = 0.0  # Rotation element [2, 1] of the rotation matrix
-rotation_22 = 1.0  # Rotation element [2, 2] of the rotation matrix
+rotation_22 = 0.0  # Rotation element [2, 2] of the rotation matrix
 
 translation_x = 0.0  # Translation along X-axis (in the camera coordinate system)
 translation_y = 0.0  # Translation along Y-axis (in the camera coordinate system)
-translation_z = 5.0  # Translation along Z-axis (in the camera coordinate system)
+translation_z = 3  # Translation along Z-axis (in the camera coordinate system)
 
 image_height = 640
 image_width = 480
@@ -219,14 +219,14 @@ if vertices is not None:
     
     # Generate the depth map
     depth_map, object_pixels = generate_depth_map(vertices, K, Rt, image_dimensions)
-
-    # Remove occluded points
-    #visible_vertices = remove_occluded_points(depth_map, object_pixels)
     
     # back face culling
     visible_vertices = backface_culling(vertices, faces, normals, Rt)
     depth_map_vis, object_pixels = generate_depth_map(visible_vertices, K, Rt, image_dimensions)
-    print(visible_vertices)
+    #print(visible_vertices)
+    
+    # Remove occluded points
+    #visible_vertices = remove_occluded_points(depth_map_vis, object_pixels)
     
     
 
