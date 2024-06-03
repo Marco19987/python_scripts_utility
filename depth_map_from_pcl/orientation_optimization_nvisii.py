@@ -3,110 +3,11 @@ from scipy.optimize import minimize
 import cv2
 import matplotlib.pyplot as plt
 import math
-import trimesh
+import nvisii
 
-def generate_depth_map(vertices, intrinsic_matrix, extrinsic_matrix, image_dimensions):
-    # Convert vertices to homogeneous coordinates (add 1)
-    homogeneous_vertices = np.hstack((vertices, np.ones((vertices.shape[0], 1))))
-
-    # Apply extrinsic transformation
-    transformed_vertices = np.dot(homogeneous_vertices, extrinsic_matrix.T)
-
-    # Project vertices into the camera
-    projected_vertices = np.dot(transformed_vertices, intrinsic_matrix.T)
-
-    # Normalize homogeneous coordinates
-    projected_vertices[:, 0] /= projected_vertices[:, 2]
-    projected_vertices[:, 1] /= projected_vertices[:, 2]
-
-    # Create the depth map
-    depth_map = np.ones(image_dimensions)* np.nan
-    object_pixels = []
-
-    # Draw projected points on the depth map
-    for point in projected_vertices:
-        x, y, z = point.astype(float)
-        if 0 <= x < image_dimensions[1] and 0 <= y < image_dimensions[0]:
-            xr = math.floor(x)
-            yr = math.floor(y)
-            if math.isnan(depth_map[yr,xr]):          
-                depth_map[yr, xr] = z  # Depth Z
-                object_pixels.append((xr, yr))  # Add the pixel to the list of object pixels
-            else:        
-            	# the pixel is already occupied => take the nearest one
-            	depth_map[yr,xr] = min(z,depth_map[yr,xr])
-            	
-            	
-    return depth_map, object_pixels            
-    
-def remove_occluded_points(depth_map,object_pixels):
-    # Define neighborhood size
-    neighborhood_size = 10
-    # Get dimensions of the depth map
-    height, width = depth_map.shape
-
-    # Create an empty array to store the result
-    result_map = np.zeros((height, width))
-    
-
-    # Iterate over each pixel in the depth map
-    for x, y in object_pixels:
-            # Get the depth value of the current pixel
-            depth_value = depth_map[y, x]
-            
-
-            # Check if the current pixel is at the border where the neighborhood is not fully available
-            if y - neighborhood_size >= 0 and y + neighborhood_size < height and \
-                    x - neighborhood_size >= 0 and x + neighborhood_size < width:
-                # Extract the neighborhood around the current pixel
-                neighborhood = depth_map[y - neighborhood_size:y + neighborhood_size + 1,
-                                          x - neighborhood_size:x + neighborhood_size + 1]
-                                     
-
-                # Compute the mean depth value of the neighborhood
-                mean_depth = np.nanmean(neighborhood)
-
-                # Check if the depth value of the current pixel is less than the mean depth of the neighborhood
-                if depth_value <= mean_depth:
-                    result_map[y, x] = depth_value
-
-    return result_map
-
-def read_ply_file(file_name):
-    try:
-        # Read the PLY file
-        with open(file_name, 'rb') as f:
-            ply_data = PlyData.read(f)
-
-        # Extract necessary information from the PLY file
-        vertices = np.vstack([ply_data['vertex']['x'],
-                              ply_data['vertex']['y'],
-                              ply_data['vertex']['z']]).T
-
-        # Example of extracting intrinsic and extrinsic parameters
-        intrinsic_matrix = np.array([[focal_length_x, 0, principal_point_x],
-                                      [0, focal_length_y, principal_point_y],
-                                      [0, 0, 1]])
-
-        extrinsic_matrix = np.array([[rotation_00, rotation_01, rotation_02, translation_x],
-                                      [rotation_10, rotation_11, rotation_12, translation_y],
-                                      [rotation_20, rotation_21, rotation_22, translation_z]])
-
-        image_dimensions = (image_height, image_width)
-
-        return vertices, intrinsic_matrix, extrinsic_matrix, image_dimensions
-
-    except FileNotFoundError:
-        print("The specified file was not found.")
-        return None, None, None, None
-    except Exception as e:
-        print("An error occurred while reading the file:", e)
-        return None, None, None, None
-        
-        
 def crop_object_image(depth_map,object_pixels):
     
-    pixel_x , pixel_y = map(list, zip(*object_pixels))
+    pixel_y , pixel_x = map(list, zip(*object_pixels))
     max_x = max(pixel_x)
     max_y = max(pixel_y)
     min_x = min(pixel_x)
@@ -130,23 +31,6 @@ def crop_object_image(depth_map,object_pixels):
     return obj_image
 
 
-def read_obj_file(file_name):
-    try:
-        # Read the OBJ file
-        mesh = trimesh.load(file_name)
-    
-        vertices = np.array(mesh.vertices)
-        faces = np.array(mesh.faces)
-
-        return vertices, faces
-
-    except FileNotFoundError:
-        print("The specified file was not found.")
-        return None, None, None, None
-    except Exception as e:
-        print("An error occurred while reading the file:", e)
-        return None, None, None, None
-    
 def quaternion_to_rotation_matrix(q):
     """
     Converts a quaternion into a 3x3 rotation matrix.
@@ -167,7 +51,6 @@ def quaternion_to_rotation_matrix(q):
     ])
     
     return R
-
 
 def normalize_quaternion(q):
     """
@@ -316,46 +199,25 @@ def resize_images_to_same_size(image1_array, image2_array):
 
     return resized_image_1, resized_image_2
 
-def getRtmatrix(translation, quaternion):
-    """
-    Given a quaternion and a translation vector, returns the Rt matrix.
-    
-    Parameters:
-    quaternion (tuple or list): A quaternion represented as (w, x, y, z).
-    translation (tuple or list): A translation vector represented as (tx, ty, tz).
-    
-    Returns:
-    np.ndarray: A 3x4 transformation matrix combining rotation and translation.
-    """
-    # Normalize the quaternion
-    w, x, y, z = normalize_quaternion(quaternion)
-    
-    # Compute the rotation matrix from the quaternion
-    R = quaternion_to_rotation_matrix((w, x, y, z))
-    
-    # Combine the rotation matrix and translation vector to form the Rt matrix
-    tx, ty, tz = translation
-    Rt = np.array([
-        [R[0, 0], R[0, 1], R[0, 2], tx],
-        [R[1, 0], R[1, 1], R[1, 2], ty],
-        [R[2, 0], R[2, 1], R[2, 2], tz]
-    ])
-    
-    return Rt
-
 def orientation_cost_function(euler_angles):
     
     translation2 = [0,0,0.5]
     quaternion2 = euler_to_quaternion(euler_angles)
-    Rt2 = getRtmatrix(translation2,quaternion2)
-    depth_map2, object_pixels2 = generate_depth_map(vertices, K, Rt2, image_dimensions)
+    
+    depth_map2, object_pixels2 = generate_depth_map(object_name,translation2, quaternion2)
+
+   
+    # # crop object image
     obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-    obj_depth_image2 = normalize_depth_map(obj_depth_image2)    
+    
+    # # normalize object depth map
+    obj_depth_image2 = normalize_depth_map(obj_depth_image2)
+    
     resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
     
-    # cv2.imshow("resized_image1 ", resized_image1_array)
-    # cv2.imshow("resized_image2 ", resized_image2_array)
-    # cv2.waitKey(0)
+    cv2.imshow("resized_image1 ", resized_image1_array)
+    cv2.imshow("resized_image2 ", resized_image2_array)
+    cv2.waitKey(0)
     
     w1,h1 = obj_depth_image.shape
     w2,h2 = obj_depth_image2.shape
@@ -420,7 +282,7 @@ def orientation_cost_function(euler_angles):
                 cost = cost + 0 # is good
             else:
                 if math.isnan(d2) or math.isnan(d1):
-                    cost = cost + 0
+                    cost = cost + 1
                 else:
                     #print(d1,d2,(d1-d2)**2)
                     cost = cost + (d1-d2)**2
@@ -432,10 +294,6 @@ def orientation_cost_function(euler_angles):
     print("cost value", cost)
     
     return cost
-
-def unit_quaternion_constraint(quaternion):
-    return np.sum(np.square(quaternion)) - 1
-
 
 def euler_to_quaternion(euler_angles):
     """
@@ -470,20 +328,143 @@ def euler_to_quaternion(euler_angles):
 
     return np.array([qx, qy, qz, qw])
 
+def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path):
+        
+    nvisii.initialize(headless=not interactive, verbose=True)
+    nvisii.disable_updates()
+    # nvisii.disable_denoiser()
+
+    fx,fy,cx,cy,width_,height_ = camera_intrinsics
+    camera = nvisii.entity.create(
+        name="camera",
+        transform=nvisii.transform.create("camera"),
+        camera=nvisii.camera.create_from_intrinsics(
+            name="camera",
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
+            width=width_,
+            height=height_
+        )
+    )
+    camera.get_transform().look_at(
+        at=(0, 0, 0),
+        up=(0, -1, -1),
+        eye=(1, 1, 0)
+    )
+    nvisii.set_camera_entity(camera)
+
+    obj_mesh = nvisii.entity.create(
+        name=object_name,
+        mesh=nvisii.mesh.create_from_file(object_name, obj_file_path),
+        transform=nvisii.transform.create(object_name),
+        material=nvisii.material.create(object_name)
+    )
+
+    obj_mesh.get_transform().set_parent(camera.get_transform())
+
+    nvisii.sample_pixel_area(
+        x_sample_interval=(.5, .5),
+        y_sample_interval=(.5, .5))
+        
+    
+    return 
+
+def generate_depth_map(object_name, position, quaternion):
+    obj_mesh = nvisii.entity.get(object_name)
+
+    x = position[0]
+    y = -position[1]
+    z = -position[2]
+
+    qw = quaternion[3]
+    qx = quaternion[0]
+    qy = quaternion[1]
+    qz = quaternion[2]
+
+
+    p = np.array([x, y, z])
+
+    obj_mesh.get_transform().set_position(p)
+
+    rotation =  nvisii.quat(qw,qx,qy,qz)
+    rotation_flip = nvisii.angleAxis(-nvisii.pi(),nvisii.vec3(1,0,0)) * rotation # additional rotation due camera nvissi frame
+    obj_mesh.get_transform().set_rotation(rotation_flip)
+    
+    obj_mesh.get_transform().set_scale(nvisii.vec3(mesh_scale))
+    
+
+
+    # import pdb
+    # breakpoint()
+    virtual_depth_array = nvisii.render_data(
+        width=int(image_width),
+        height=int(image_height),
+        start_frame=0,
+        frame_count=1,
+        bounce=int(0),
+        options="depth"
+    )
+
+    virtual_depth_array = np.array(virtual_depth_array).reshape(image_height, image_width, 4)
+    virtual_depth_array = np.flipud(virtual_depth_array)
+    
+    
+    # get pixels
+    object_pixels = []
+    for i in range(image_height):
+            for j in range(image_width):
+                if virtual_depth_array[i, j, 0] < max_virtual_depth and virtual_depth_array[i, j, 0] > 0:
+                     object_pixels.append((i, j))
+                
+                     
+                # fix also error in virtual depth nvisii
+                if virtual_depth_array[i, j, 0] > max_virtual_depth:
+                    virtual_depth_array[i, j, 0] = np.nan
+                else:
+                    virtual_depth_array[i, j, 0] = convert_from_uvd(i, j, virtual_depth_array[i, j, 0], focal_length_x, focal_length_y, principal_point_x, principal_point_y)
+
+    return virtual_depth_array[:,:,0], object_pixels
+
+    
+def convert_from_uvd(v, u, d, fx, fy, cx, cy):
+    x_over_z = (cx - u) / fx
+    y_over_z = (cy - v) / fy
+    z = d / np.sqrt(1. + x_over_z**2 + y_over_z**2)
+    return z
+
+
+
+
 # Example initialization of intrinsic and extrinsic parameters
 focal_length_x = 610  # Focal length in pixels (along X-axis)
 focal_length_y = 610  # Focal length in pixels (along Y-axis)
 principal_point_x = 317  # Principal point offset along X-axis (in pixels)
 principal_point_y = 238  # Principal point offset along Y-axis (in pixels)
 
-image_height = 640
-image_width = 480
+image_height = 480
+image_width = 640
 image_dimensions = (image_height, image_width)
 
 # Example of extracting intrinsic and extrinsic parameters
 K = np.array([[focal_length_x, 0, principal_point_x],
                                 [0, focal_length_y, principal_point_y],
                                 [0, 0, 1]])
+
+# Load file
+object_name = "banana"
+file_name = "cad_models/banana.obj"  
+mesh_scale = 0.01
+max_virtual_depth = 5 #[m]
+
+
+# initialize nvisii
+camera_intrinsic = [focal_length_x,focal_length_y,principal_point_x,principal_point_y,image_width,image_height]
+interactive = False
+initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
+
+
 
 
 # Example initialization of extrinsic parameters (rotation and translation)
@@ -493,74 +474,68 @@ quaternion = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]
 translation = np.array([0,0,0.4])
 
 
-Rt = getRtmatrix(translation, quaternion)
+
+# Generate the depth map
+depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion)
+depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion)
+
+cv2.imshow("depth_map", depth_map)
+
+# # crop object image
+obj_depth_image = crop_object_image(depth_map,object_pixels)
+cv2.imshow("obj_depth_image", obj_depth_image)
 
 
-# Load file
-file_name = "cad_models/banana.obj"  # Replace with the path to your PLY file
-#vertices, K, Rt, image_dimensions = read_ply_file(file_name)
-vertices, faces = read_obj_file(file_name)
-vertices = vertices*0.01
+
+# # normalize object depth map
+obj_depth_image = normalize_depth_map(obj_depth_image)
+cv2.imshow("obj_depth_image_normal", obj_depth_image)
+
+
+# # Ottimizzazione della funzione di costo
+initial_guess = [1,1,0]
+# constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
+bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
+
+result = minimize(orientation_cost_function,initial_guess,method="SLSQP",
+                    options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True},
+                    bounds=bnds)#,constraints=constraints)
+quaternion_optimized = euler_to_quaternion(result.x)
 
 
 
-if vertices is not None:
-    # Generate the depth map
-    depth_map, object_pixels = generate_depth_map(vertices, K, Rt, image_dimensions)
-    cv2.imshow("dddd", depth_map)
-    # Remove occluded points
-    #visible_vertices = remove_occluded_points(depth_map,object_pixels) 
+# # second pose
+# translation2 = [0,0,0.5]
+# quaternion2 = quaternion_optimized
+# #quaternion2 = [ 0.12946097, -0.37395653,  0.08676202,  0.92386364]
+# Rt2 = getRtmatrix(translation2,quaternion2)
+# depth_map2, object_pixels2 = generate_depth_map(vertices, K, Rt2, image_dimensions)
+# obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
+# obj_depth_image2 = normalize_depth_map(obj_depth_image2)    
+# cv2.imshow("Depth Map2", depth_map2)
+# cv2.imshow("obj_depth_image2", obj_depth_image2)
+
+
+
+# resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
+
+# #print(resized_image1_array.shape)
+# #print(resized_image2_array.shape)
+
+# cv2.imshow("Resized Image 1", resized_image1_array)
+# cv2.imshow("Resized Image 2", resized_image2_array)
+
+# # Display the depth map with only visible vertices
+# #cv2.imshow("Depth Map", depth_map)
+
     
-    
-    # crop object image
-    obj_depth_image = crop_object_image(depth_map,object_pixels)
-    
-    # normalize object depth map
-    obj_depth_image = normalize_depth_map(obj_depth_image)
-    
-    
-    # Ottimizzazione della funzione di costo
-    initial_guess = [1,1,0]
-    # constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
-    bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
+# #cv2.imshow("Depth Map ref", visible_vertices)
 
-    result = minimize(orientation_cost_function,initial_guess,method="SLSQP",
-                      options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True},
-                      bounds=bnds)#,constraints=constraints)
-    quaternion_optimized = euler_to_quaternion(result.x)
-    
-    
-    
-    # second pose
-    translation2 = [0,0,0.5]
-    quaternion2 = quaternion_optimized
-    #quaternion2 = [ 0.12946097, -0.37395653,  0.08676202,  0.92386364]
-    Rt2 = getRtmatrix(translation2,quaternion2)
-    depth_map2, object_pixels2 = generate_depth_map(vertices, K, Rt2, image_dimensions)
-    obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-    obj_depth_image2 = normalize_depth_map(obj_depth_image2)    
-    cv2.imshow("Depth Map2", depth_map2)
-    cv2.imshow("obj_depth_image2", obj_depth_image2)
+# #cv2.imshow("Depth Map object", obj_depth_image)
 
 
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
-    resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-
-    #print(resized_image1_array.shape)
-    #print(resized_image2_array.shape)
-
-    cv2.imshow("Resized Image 1", resized_image1_array)
-    cv2.imshow("Resized Image 2", resized_image2_array)
-    
-    # Display the depth map with only visible vertices
-    #cv2.imshow("Depth Map", depth_map)
-
-     
-    #cv2.imshow("Depth Map ref", visible_vertices)
-
-    #cv2.imshow("Depth Map object", obj_depth_image)
-    
-
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+nvisii.deinitialize()
 
