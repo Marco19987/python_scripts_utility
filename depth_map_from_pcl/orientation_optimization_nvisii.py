@@ -292,10 +292,10 @@ def orientation_cost_function(euler_angles):
     print("euler_angles", euler_angles)
     print("cost value", cost)
     print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
-    cv2.imshow("depth_map2", depth_map2)
-    cv2.imshow("Real image", resized_image1_array)
-    cv2.imshow("Cad model", resized_image2_array)
-    cv2.waitKey(0)
+    # cv2.imshow("depth_map2", depth_map2)
+    # cv2.imshow("Real image", resized_image1_array)
+    # cv2.imshow("Cad model", resized_image2_array)
+    # cv2.waitKey(0)
     return cost
 
 def euler_to_quaternion(euler_angles):
@@ -374,6 +374,24 @@ def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path
     
     return 
 
+def change_object_mesh(old_object_name, new_object_name,obj_file_path):
+    
+    camera = nvisii.entity.get("camera")
+   
+    nvisii.entity.remove(old_object_name)
+    
+    obj_mesh = nvisii.entity.create(
+        name=object_name,
+        mesh=nvisii.mesh.create_from_file(new_object_name, obj_file_path),
+        transform=nvisii.transform.create(new_object_name),
+        material=nvisii.material.create(new_object_name)
+    )
+
+    obj_mesh.get_transform().set_parent(camera.get_transform())
+
+    
+    return 
+
 def generate_depth_map(object_name, position, quaternion):
     obj_mesh = nvisii.entity.get(object_name)
 
@@ -447,8 +465,8 @@ def depth_to_pointcloud(depth_map, camera_intrinsics):
     for i in range(width):
         for j in range(height):
             pz = depth_map[i][j]
-            px = (i - cx)*pz
-            py = (j - cy)*pz
+            px = ((i - cx)*pz)/fx
+            py = ((j - cy)*pz)/fy
             point_cloud.append((px,py,pz))
                 
     return point_cloud
@@ -461,8 +479,8 @@ def depth_to_pointcloud_fromlist(depth_map, camera_intrinsics):
     point_cloud = []    
     for i,j,dz in depth_map:
          pz = dz
-         px = (i - cx)*pz
-         py = (j - cy)*pz
+         px = ((i - cx)*pz)/fx
+         py = ((j - cy)*pz)/fy
          point_cloud.append((px,py,pz))
                 
     return point_cloud
@@ -540,8 +558,8 @@ K = np.array([[focal_length_x, 0, principal_point_x],
 
 # Load file
 object_name = "banana"
-file_name = "cad_models/bowl.obj"  
-mesh_scale = 0.001 #0.01 banana
+file_name = "cad_models/banana2.obj"  
+mesh_scale = 0.01 #0.01 banana
 max_virtual_depth = 5 #[m]
 
 
@@ -554,11 +572,11 @@ initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
 
 
 # Example initialization of extrinsic parameters (rotation and translation)
-euler_angles = [0,1.57,0] # radians - roll pitch and yaw
+euler_angles = [0.5,0.6,0.9] # radians - roll pitch and yaw
 
 quaternion = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
 quaternion = normalize_quaternion(quaternion)
-translation = np.array([0,0,0.5])
+translation = np.array([0.0,0.0,0.5])
 
 
 
@@ -577,11 +595,15 @@ obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
 #cv2.imshow("obj_depth_image_normal", obj_depth_image)
 
 
+# change object mesh to simulate differences between real object and cad
+new_object_name = "banana2"
+new_object_path = "cad_models/banana2.obj"
+mesh_scale = 0.01
+change_object_mesh(object_name, new_object_name, new_object_path)
 
 
-# # Ottimizzazione della funzione di costo
-mesh_scale = mesh_scale*0.5 # change mesh scale to test different scales
-initial_guess = [0.5,0.5,0.5]
+mesh_scale = mesh_scale*1 # change mesh scale to test different scales
+initial_guess = [3.14,0.5,0.5]
 #initial_guess = normalize_quaternion([1,0,0,0])
 constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
 bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
@@ -589,8 +611,8 @@ bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
 # result = minimize(orientation_cost_function,initial_guess,
 #                     options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True},
 #                     bounds=bnds)#,constraints=constraints)
-result = minimize(orientation_cost_function,initial_guess, method="SLSQP",bounds=bnds,
-                  options={'ftol': 1e-3, 'eps': 1e-1,'maxiter': 10,'disp': True})
+result = minimize(orientation_cost_function,initial_guess, method="Powell",bounds=bnds,
+                  options={'ftol': 1e-2, 'eps': 1e-1,'maxiter': 10,'disp': True,'direc' : np.array([(1,0,0),(0,1,0),(0,0,1)])})
 
 # result = dual_annealing(orientation_cost_function, bnds)
 
@@ -599,8 +621,13 @@ result = minimize(orientation_cost_function,initial_guess, method="SLSQP",bounds
 
 
 # # second pose
-translation2 = [0,0,0.5]
-quaternion2 = euler_to_quaternion(result.x)#euler_to_quaternion((0,1.57,0))
+
+
+
+translation2 = [0.0,0.0,0.5]
+# quaternion2 = euler_to_quaternion((0,1.57,0.9))
+quaternion2 = normalize_quaternion(euler_to_quaternion(result.x))
+
 depth_map2, object_pixels2 = generate_depth_map(object_name,translation2, quaternion2)
 obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
 obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)    
@@ -659,7 +686,11 @@ ax.scatter(xs, ys, zs)
 # plt.show()
 plt.savefig("Result" + '.png')
 
-
+# compute real object absolute pose wrt camera frame
+R2 = quaternion_to_rotation_matrix(quaternion2)
+print("real object position", t + translation2)
+print("real object orientation", R*R2)
+print("real object scale", mesh_scale*c)
 
 
 cv2.waitKey(0)
