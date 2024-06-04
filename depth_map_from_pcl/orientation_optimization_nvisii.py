@@ -453,6 +453,20 @@ def depth_to_pointcloud(depth_map, camera_intrinsics):
                 
     return point_cloud
 
+def depth_to_pointcloud_fromlist(depth_map, camera_intrinsics):
+    # generate point cloud from depth_map
+    # px = (X − cx)pz /fx, py = (Y − cy )pz /y
+    fx,fy,cx,cy,width_,height_ = camera_intrinsics
+
+    point_cloud = []    
+    for i,j,dz in depth_map:
+         pz = dz
+         px = (i - cx)*pz
+         py = (j - cy)*pz
+         point_cloud.append((px,py,pz))
+                
+    return point_cloud
+
 def plot_pointcloud(point_cloud, title):
     import matplotlib
     matplotlib.use('Agg')  # Use a non-interactive backend
@@ -464,6 +478,48 @@ def plot_pointcloud(point_cloud, title):
     ax.scatter(xs, ys, zs)
     # plt.show()
     plt.savefig(title + '.png')
+    
+def resample_depth_map(depth_map, object_pixels,width,height):
+    # this method resamples the object depth map identified by object_pixels width width and height
+    pixel_y , pixel_x = map(list, zip(*object_pixels))
+    max_x = max(pixel_x)
+    max_y = max(pixel_y)
+    min_x = min(pixel_x)
+    min_y = min(pixel_y)
+    
+    
+    new_pixel_x = np.linspace(min_x,max_x, width).astype(int)
+    new_pixel_y = np.linspace(min_y,max_y, height).astype(int)
+
+    resampled_depth_map = []
+
+    for x in new_pixel_x:
+        for y in new_pixel_y:
+            #if not math.isnan(depth_map[y,x]):
+            resampled_depth_map.append((y,x,depth_map[y,x])) 
+            
+    #print(resampled_depth_map)
+    return resampled_depth_map
+
+
+def kabsch_umeyama(A, B):
+    assert A.shape == B.shape
+    n, m = A.shape
+
+    EA = np.mean(A, axis=0)
+    EB = np.mean(B, axis=0)
+    VarA = np.mean(np.linalg.norm(A - EA, axis=1) ** 2)
+
+    H = ((A - EA).T @ (B - EB)) / n
+    U, D, VT = np.linalg.svd(H)
+    d = np.sign(np.linalg.det(U) * np.linalg.det(VT))
+    S = np.diag([1] * (m - 1) + [d])
+
+    R = U @ S @ VT
+    c = VarA / np.trace(np.diag(D) @ S)
+    t = EA - c * R @ EB
+
+    return R, c, t
 
 
 
@@ -524,7 +580,7 @@ obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
 
 
 # # Ottimizzazione della funzione di costo
-mesh_scale = mesh_scale*1.5 # change mesh scale to test different scales
+mesh_scale = mesh_scale*0.5 # change mesh scale to test different scales
 initial_guess = [0.5,0.5,0.5]
 #initial_guess = normalize_quaternion([1,0,0,0])
 constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
@@ -533,8 +589,8 @@ bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
 # result = minimize(orientation_cost_function,initial_guess,
 #                     options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True},
 #                     bounds=bnds)#,constraints=constraints)
-#result = minimize(orientation_cost_function,initial_guess, method="SLSQP",bounds=bnds,
-#                  options={'ftol': 1e-3, 'eps': 1e-1,'maxiter': 10,'disp': True})
+result = minimize(orientation_cost_function,initial_guess, method="SLSQP",bounds=bnds,
+                  options={'ftol': 1e-3, 'eps': 1e-1,'maxiter': 10,'disp': True})
 
 # result = dual_annealing(orientation_cost_function, bnds)
 
@@ -544,25 +600,64 @@ bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
 
 # # second pose
 translation2 = [0,0,0.5]
-quaternion2 = euler_to_quaternion((0,0,0))
+quaternion2 = euler_to_quaternion(result.x)#euler_to_quaternion((0,1.57,0))
 depth_map2, object_pixels2 = generate_depth_map(object_name,translation2, quaternion2)
 obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-obj_depth_image2_norm = normalize_depth_map(obj_depth_image2)    
+obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)    
 cv2.imshow("Depth Map2", depth_map2)
 
 
-# Retrieve objects point clouds not normalized
+# Retrieve objects point clouds and resample them
 resized_image_real_object, resized_image_cad_model = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
 
 cv2.imshow("resized_image_real_object", resized_image_real_object)
 cv2.imshow("resized_image_cad_model", resized_image_cad_model)
 
-point_cloud_real = depth_to_pointcloud(resized_image_real_object,camera_intrinsic)
-point_cloud_cad = depth_to_pointcloud(resized_image_cad_model,camera_intrinsic)
+res_width, res_height = resized_image_real_object.shape
+resampled_depth_map_real = resample_depth_map(depth_map, object_pixels,res_width,res_height)
+resampled_depth_map_cad = resample_depth_map(depth_map2, object_pixels2,res_width,res_height)
+
+point_cloud_real = depth_to_pointcloud_fromlist(resampled_depth_map_real,camera_intrinsic)
+point_cloud_cad = depth_to_pointcloud_fromlist(resampled_depth_map_cad,camera_intrinsic)
+
+point_cloud_real = np.array(point_cloud_real)
+point_cloud_cad = np.array(point_cloud_cad)
+
+mask = ~np.isnan(point_cloud_real) & ~np.isnan(point_cloud_cad)
+mask_matrix = mask.reshape(res_width*res_height,3)
+nan_depth_index = mask_matrix[:,2]
+
+point_cloud_real = point_cloud_real[nan_depth_index]
+point_cloud_cad = point_cloud_cad[nan_depth_index]
 
 plot_pointcloud(point_cloud_real,"point_cloud_real")
 plot_pointcloud(point_cloud_cad,"point_cloud_cad")
 
+print(len(point_cloud_real))
+print(len(point_cloud_cad))
+
+# now we have two ordered point clouds, we can run Umeyama and retrieve the relative translation, orientation and scale 
+R, c, t = kabsch_umeyama(point_cloud_real, point_cloud_cad)
+
+print("relative translation", t)
+print("relative scale", c)
+print("relative orientation", R)
+
+point_cloud_cad_transformed = np.array([t + c * R @ b for b in point_cloud_cad])
+
+import matplotlib
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+xs = [point[0] for point in point_cloud_real]
+ys = [point[1] for point in point_cloud_real]
+zs = [point[2] for point in point_cloud_real]
+ax.scatter(xs, ys, zs)
+xs = [point[0] for point in point_cloud_cad_transformed]
+ys = [point[1] for point in point_cloud_cad_transformed]
+zs = [point[2] for point in point_cloud_cad_transformed]
+ax.scatter(xs, ys, zs)
+# plt.show()
+plt.savefig("Result" + '.png')
 
 
 
