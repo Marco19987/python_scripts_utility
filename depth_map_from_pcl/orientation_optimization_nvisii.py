@@ -1,7 +1,8 @@
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, dual_annealing
 import cv2
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import math
 import nvisii
 
@@ -75,6 +76,8 @@ def normalize_depth_map(depth_map):
     
     # Normalize the matrix
     normalized_depth_map = (depth_map - min_value)/ range_value
+    
+    # print("normalization values", max_value, min_value,  range_value, normalized_depth_map)
     
     # row,col = normalized_depth_map.shape
     # a = 0
@@ -203,24 +206,19 @@ def orientation_cost_function(euler_angles):
     
     translation2 = [0,0,0.5]
     quaternion2 = euler_to_quaternion(euler_angles)
-    
+    quaternion2 = normalize_quaternion(quaternion2)
     depth_map2, object_pixels2 = generate_depth_map(object_name,translation2, quaternion2)
-
    
     # # crop object image
     obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
     
     # # normalize object depth map
-    obj_depth_image2 = normalize_depth_map(obj_depth_image2)
+    obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)
     
-    resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-    
-    cv2.imshow("resized_image1 ", resized_image1_array)
-    cv2.imshow("resized_image2 ", resized_image2_array)
-    cv2.waitKey(0)
-    
-    w1,h1 = obj_depth_image.shape
-    w2,h2 = obj_depth_image2.shape
+    resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image_normalized, obj_depth_image2_normalized)
+        
+    w1,h1 = obj_depth_image_normalized.shape
+    w2,h2 = obj_depth_image2_normalized.shape
     
     aspect_ratio_1 = w1/h1
     aspect_ratio_2 = w2/h2
@@ -286,13 +284,18 @@ def orientation_cost_function(euler_angles):
                 else:
                     #print(d1,d2,(d1-d2)**2)
                     cost = cost + (d1-d2)**2
-    cost = cost/w*h
-    cost = cost + 1*(aspect_ratio_1-aspect_ratio_2)**2
+
+    cost = cost/(w*h)
+    #cost = cost + 1*(aspect_ratio_1-aspect_ratio_2)**2
     
-    
+
     print("euler_angles", euler_angles)
     print("cost value", cost)
-    
+    print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
+    cv2.imshow("depth_map2", depth_map2)
+    cv2.imshow("Real image", resized_image1_array)
+    cv2.imshow("Cad model", resized_image2_array)
+    cv2.waitKey(0)
     return cost
 
 def euler_to_quaternion(euler_angles):
@@ -326,7 +329,7 @@ def euler_to_quaternion(euler_angles):
     qy = cr * sp * cy + sr * cp * sy
     qz = cr * cp * sy - sr * sp * cy
 
-    return np.array([qx, qy, qz, qw])
+    return np.array([qw, qx, qy, qz])
 
 def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path):
         
@@ -378,10 +381,10 @@ def generate_depth_map(object_name, position, quaternion):
     y = -position[1]
     z = -position[2]
 
-    qw = quaternion[3]
-    qx = quaternion[0]
-    qy = quaternion[1]
-    qz = quaternion[2]
+    qw = quaternion[0]
+    qx = quaternion[1]
+    qy = quaternion[2]
+    qz = quaternion[3]
 
 
     p = np.array([x, y, z])
@@ -394,10 +397,6 @@ def generate_depth_map(object_name, position, quaternion):
     
     obj_mesh.get_transform().set_scale(nvisii.vec3(mesh_scale))
     
-
-
-    # import pdb
-    # breakpoint()
     virtual_depth_array = nvisii.render_data(
         width=int(image_width),
         height=int(image_height),
@@ -420,7 +419,7 @@ def generate_depth_map(object_name, position, quaternion):
                 
                      
                 # fix also error in virtual depth nvisii
-                if virtual_depth_array[i, j, 0] > max_virtual_depth:
+                if virtual_depth_array[i, j, 0] > max_virtual_depth or virtual_depth_array[i, j, 0] <0:
                     virtual_depth_array[i, j, 0] = np.nan
                 else:
                     virtual_depth_array[i, j, 0] = convert_from_uvd(i, j, virtual_depth_array[i, j, 0], focal_length_x, focal_length_y, principal_point_x, principal_point_y)
@@ -434,6 +433,37 @@ def convert_from_uvd(v, u, d, fx, fy, cx, cy):
     z = d / np.sqrt(1. + x_over_z**2 + y_over_z**2)
     return z
 
+def unit_quaternion_constraint(quaternion):
+    return np.sum(np.square(quaternion)) - 1
+    
+def depth_to_pointcloud(depth_map, camera_intrinsics):
+    # generate point cloud from depth_map
+    # px = (X − cx)pz /fx, py = (Y − cy )pz /y
+    
+    width, height = depth_map.shape
+    fx,fy,cx,cy,width_,height_ = camera_intrinsics
+
+    point_cloud = []    
+    for i in range(width):
+        for j in range(height):
+            pz = depth_map[i][j]
+            px = (i - cx)*pz
+            py = (j - cy)*pz
+            point_cloud.append((px,py,pz))
+                
+    return point_cloud
+
+def plot_pointcloud(point_cloud, title):
+    import matplotlib
+    matplotlib.use('Agg')  # Use a non-interactive backend
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    xs = [point[0] for point in point_cloud]
+    ys = [point[1] for point in point_cloud]
+    zs = [point[2] for point in point_cloud]
+    ax.scatter(xs, ys, zs)
+    # plt.show()
+    plt.savefig(title + '.png')
 
 
 
@@ -454,8 +484,8 @@ K = np.array([[focal_length_x, 0, principal_point_x],
 
 # Load file
 object_name = "banana"
-file_name = "cad_models/banana.obj"  
-mesh_scale = 0.01
+file_name = "cad_models/bowl.obj"  
+mesh_scale = 0.001 #0.01 banana
 max_virtual_depth = 5 #[m]
 
 
@@ -468,70 +498,73 @@ initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
 
 
 # Example initialization of extrinsic parameters (rotation and translation)
-euler_angles = [0,1,0] # radians - roll pitch and yaw
+euler_angles = [0,1.57,0] # radians - roll pitch and yaw
 
 quaternion = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
-translation = np.array([0,0,0.4])
+quaternion = normalize_quaternion(quaternion)
+translation = np.array([0,0,0.5])
 
 
 
 # Generate the depth map
+depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion) # The first time call it two times due to nvisii bug
 depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion)
-depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion)
-
 cv2.imshow("depth_map", depth_map)
 
 # # crop object image
 obj_depth_image = crop_object_image(depth_map,object_pixels)
-cv2.imshow("obj_depth_image", obj_depth_image)
-
+#cv2.imshow("obj_depth_image", obj_depth_image)
 
 
 # # normalize object depth map
-obj_depth_image = normalize_depth_map(obj_depth_image)
-cv2.imshow("obj_depth_image_normal", obj_depth_image)
+obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
+#cv2.imshow("obj_depth_image_normal", obj_depth_image)
+
+
 
 
 # # Ottimizzazione della funzione di costo
-initial_guess = [1,1,0]
-# constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
+mesh_scale = mesh_scale*1.5 # change mesh scale to test different scales
+initial_guess = [0.5,0.5,0.5]
+#initial_guess = normalize_quaternion([1,0,0,0])
+constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
 bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
 
-result = minimize(orientation_cost_function,initial_guess,method="SLSQP",
-                    options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True},
-                    bounds=bnds)#,constraints=constraints)
-quaternion_optimized = euler_to_quaternion(result.x)
+# result = minimize(orientation_cost_function,initial_guess,
+#                     options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True},
+#                     bounds=bnds)#,constraints=constraints)
+#result = minimize(orientation_cost_function,initial_guess, method="SLSQP",bounds=bnds,
+#                  options={'ftol': 1e-3, 'eps': 1e-1,'maxiter': 10,'disp': True})
+
+# result = dual_annealing(orientation_cost_function, bnds)
+
+#quaternion_optimized = euler_to_quaternion(result.x)
 
 
 
 # # second pose
-# translation2 = [0,0,0.5]
-# quaternion2 = quaternion_optimized
-# #quaternion2 = [ 0.12946097, -0.37395653,  0.08676202,  0.92386364]
-# Rt2 = getRtmatrix(translation2,quaternion2)
-# depth_map2, object_pixels2 = generate_depth_map(vertices, K, Rt2, image_dimensions)
-# obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-# obj_depth_image2 = normalize_depth_map(obj_depth_image2)    
-# cv2.imshow("Depth Map2", depth_map2)
-# cv2.imshow("obj_depth_image2", obj_depth_image2)
+translation2 = [0,0,0.5]
+quaternion2 = euler_to_quaternion((0,0,0))
+depth_map2, object_pixels2 = generate_depth_map(object_name,translation2, quaternion2)
+obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
+obj_depth_image2_norm = normalize_depth_map(obj_depth_image2)    
+cv2.imshow("Depth Map2", depth_map2)
+
+
+# Retrieve objects point clouds not normalized
+resized_image_real_object, resized_image_cad_model = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
+
+cv2.imshow("resized_image_real_object", resized_image_real_object)
+cv2.imshow("resized_image_cad_model", resized_image_cad_model)
+
+point_cloud_real = depth_to_pointcloud(resized_image_real_object,camera_intrinsic)
+point_cloud_cad = depth_to_pointcloud(resized_image_cad_model,camera_intrinsic)
+
+plot_pointcloud(point_cloud_real,"point_cloud_real")
+plot_pointcloud(point_cloud_cad,"point_cloud_cad")
 
 
 
-# resized_image1_array, resized_image2_array = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-
-# #print(resized_image1_array.shape)
-# #print(resized_image2_array.shape)
-
-# cv2.imshow("Resized Image 1", resized_image1_array)
-# cv2.imshow("Resized Image 2", resized_image2_array)
-
-# # Display the depth map with only visible vertices
-# #cv2.imshow("Depth Map", depth_map)
-
-    
-# #cv2.imshow("Depth Map ref", visible_vertices)
-
-# #cv2.imshow("Depth Map object", obj_depth_image)
 
 
 cv2.waitKey(0)
