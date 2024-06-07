@@ -1,10 +1,11 @@
 import numpy as np
-from scipy.optimize import minimize, dual_annealing
+from scipy.optimize import minimize, dual_annealing,NonlinearConstraint, least_squares,basinhopping,differential_evolution
 import cv2
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import math
 import nvisii
+import time 
 
 def crop_object_image(depth_map,object_pixels):
     
@@ -202,11 +203,28 @@ def resize_images_to_same_size(image1_array, image2_array):
 
     return resized_image_1, resized_image_2
 
-def orientation_cost_function(euler_angles):
+def orientation_cost_function(orientation):
+    #translation2 = [-0.2,-0.1,0.5]
+        
+    # if np.linalg.norm(orientation) != 0:
+    #     theta = np.linalg.norm(orientation)
+    #     axis = orientation/theta
+    # else:
+    #     theta = 0
+    #     axis = [0,0,1]
+        
+    # print("axis", axis)
+    # print("theta", theta)        
+    # orientation = np.concatenate((axis, [theta]))
     
-    translation2 = [0,0,0.5]
-    quaternion2 = euler_to_quaternion(euler_angles)
+
+    
+    quaternion2 = euler_to_quaternion(orientation)
+    # quaternion2 = orientation
+    #quaternion2 = axis_angle_to_quaternion(orientation[0:3],orientation[3])
+    
     quaternion2 = normalize_quaternion(quaternion2)
+
     depth_map2, object_pixels2 = generate_depth_map(object_name,translation2, quaternion2)
    
     # # crop object image
@@ -282,20 +300,24 @@ def orientation_cost_function(euler_angles):
                 if math.isnan(d2) or math.isnan(d1):
                     cost = cost + 1
                 else:
-                    #print(d1,d2,(d1-d2)**2)
-                    cost = cost + (d1-d2)**2
+                    # print("depth_values", d1,d2)
+                    cost = cost + pow((d1-d2),2)
+                    
 
+    # cost = cost/(w*h)
     cost = cost/(w*h)
-    #cost = cost + 1*(aspect_ratio_1-aspect_ratio_2)**2
+    cost = cost + 0*(aspect_ratio_1-aspect_ratio_2)**2 
+        
     
-
-    print("euler_angles", euler_angles)
+    print("orientation", orientation)
     print("cost value", cost)
     print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
+    
     # cv2.imshow("depth_map2", depth_map2)
     # cv2.imshow("Real image", resized_image1_array)
     # cv2.imshow("Cad model", resized_image2_array)
     # cv2.waitKey(0)
+
     return cost
 
 def euler_to_quaternion(euler_angles):
@@ -393,8 +415,10 @@ def change_object_mesh(old_object_name, new_object_name,obj_file_path):
     return 
 
 def generate_depth_map(object_name, position, quaternion):
+    
     obj_mesh = nvisii.entity.get(object_name)
 
+    # rotation camera color frame to nvisii frame Rx(pi)
     x = position[0]
     y = -position[1]
     z = -position[2]
@@ -540,8 +564,63 @@ def kabsch_umeyama(A, B):
     return R, c, t
 
 
+def axis_angle_to_quaternion(axis, angle):
+    axis = axis / np.linalg.norm(axis)  # Ensure the axis is a unit vector
+    half_angle = angle / 2
+    w = np.cos(half_angle)
+    x, y, z = np.sin(half_angle) * axis
+    return np.array([w, x, y, z])
 
-# Example initialization of intrinsic and extrinsic parameters
+def compute_object_center(object_pixels, depth, camera_intrinsics):
+    pixel_y , pixel_x = map(list, zip(*object_pixels))
+    max_x = max(pixel_x)
+    max_y = max(pixel_y)
+    min_x = min(pixel_x)
+    min_y = min(pixel_y)
+    
+    
+    center_x = int((max_x + min_x)/2)
+    center_y = int((max_y + min_y)/2)
+    
+    fx,fy,cx,cy,width_,height_ = camera_intrinsics
+   
+    px = ((center_x - cx)*depth)/fx
+    py = ((center_y - cy)*depth)/fy
+    object_center = [px,py,depth]
+    
+    return object_center
+
+def find_rotation_matrix(A,B):
+    n, m = A.shape
+    H = A.T @ B
+    U, D, VT = np.linalg.svd(H)
+    d = np.sign(np.linalg.det(H))
+    S = np.diag([1] * (m - 1) + [d])
+
+    
+    R = U @ S @ VT    
+
+    return R
+
+def axis_angle_to_rotation_matrix(axis, angle):
+    axis = axis / np.linalg.norm(axis)  # Ensure the axis is a unit vector
+    a = np.cos(angle / 2)
+    b, c, d = -axis * np.sin(angle / 2)
+    return np.array([[a*a+b*b-c*c-d*d, 2*(b*c-a*d), 2*(b*d+a*c)],
+                     [2*(b*c+a*d), a*a+c*c-b*b-d*d, 2*(c*d-a*b)],
+                     [2*(b*d-a*c), 2*(c*d+a*b), a*a+d*d-b*b-c*c]])
+
+def rotation_matrix_to_axis_angle(R):
+    theta = np.arccos((np.trace(R) - 1) / 2)
+    axis = np.array([(R[2, 1] - R[1, 2]), (R[0, 2] - R[2, 0]), (R[1, 0] - R[0, 1])]) / (2 * np.sin(theta))
+    return axis/np.linalg.norm(axis), theta
+
+
+def normalize_rotation_matrix(R):
+    U, S, VT = np.linalg.svd(R)
+    return U @ VT
+
+# Initialization of intrinsic and extrinsic parameters
 focal_length_x = 610  # Focal length in pixels (along X-axis)
 focal_length_y = 610  # Focal length in pixels (along Y-axis)
 principal_point_x = 317  # Principal point offset along X-axis (in pixels)
@@ -558,9 +637,10 @@ K = np.array([[focal_length_x, 0, principal_point_x],
 
 # Load file
 object_name = "banana"
-file_name = "cad_models/banana2.obj"  
-mesh_scale = 0.01 #0.01 banana
+file_name = "cad_models/banana.obj"  
+mesh_scale_real = 0.01 #0.01 banana
 max_virtual_depth = 5 #[m]
+mesh_scale = mesh_scale_real
 
 
 # initialize nvisii
@@ -571,12 +651,15 @@ initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
 
 
 
-# Example initialization of extrinsic parameters (rotation and translation)
-euler_angles = [0.5,0.6,0.9] # radians - roll pitch and yaw
-
+#  Euler angles rapresentation
+euler_angles = [0,0,0] # radians - roll pitch and yaw
 quaternion = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
-quaternion = normalize_quaternion(quaternion)
-translation = np.array([0.0,0.0,0.5])
+
+# axis-angle rapresentation
+#quaternion = axis_angle_to_quaternion([0,0,1],1.57)
+
+#quaternion = normalize_quaternion(quaternion)
+translation = np.array([0,0,0.6])
 
 
 
@@ -584,6 +667,7 @@ translation = np.array([0.0,0.0,0.5])
 depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion) # The first time call it two times due to nvisii bug
 depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion)
 cv2.imshow("depth_map", depth_map)
+
 
 # # crop object image
 obj_depth_image = crop_object_image(depth_map,object_pixels)
@@ -597,41 +681,61 @@ obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
 
 # change object mesh to simulate differences between real object and cad
 new_object_name = "banana2"
-new_object_path = "cad_models/banana2.obj"
-mesh_scale = 0.01
+new_object_path = file_name#"cad_models/bowl.obj"
+mesh_scale = mesh_scale
 change_object_mesh(object_name, new_object_name, new_object_path)
+translation2 = translation#compute_object_center(object_pixels, 1, camera_intrinsic)
 
 
-mesh_scale = mesh_scale*1 # change mesh scale to test different scales
-initial_guess = [3.14,0.5,0.5]
-#initial_guess = normalize_quaternion([1,0,0,0])
-constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
-bnds = ((0, 3.14), (-1.57, 1.57), (0,3.14))
+mesh_scale_cad = mesh_scale_real*0.5
+mesh_scale = mesh_scale_cad # change mesh scale to test different scales
 
-# result = minimize(orientation_cost_function,initial_guess,
-#                     options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True},
-#                     bounds=bnds)#,constraints=constraints)
-result = minimize(orientation_cost_function,initial_guess, method="Powell",bounds=bnds,
-                  options={'ftol': 1e-2, 'eps': 1e-1,'maxiter': 10,'disp': True,'direc' : np.array([(1,0,0),(0,1,0),(0,0,1)])})
+initial_guess = [0,0,0] # euler angles
+bnds = [(-3.14, 3.14), (-3.14, 3.14), (-3.14,3.14)]
 
-# result = dual_annealing(orientation_cost_function, bnds)
+#initial_guess = normalize_quaternion([1,0,0,0]) # quaternion
+# constraints = {'type': 'eq', 'fun': unit_quaternion_constraint}
 
-#quaternion_optimized = euler_to_quaternion(result.x)
+# initial_guess = [0.1,0.1,0.1,0]#0.09950372,0.001,0.99503719,1.00498756] # axis angle
+# bnds = ((0.0001, 1), (0.0001, 1), (0.0001, 1), (0, 1))
+
+# initial_guess = [0,1.57,1.57] # vector r'*theta - r' and theta are the axis and angle of rotation
+# module_constraint = NonlinearConstraint(lambda x: np.linalg.norm(x), 0, 2*np.pi)
 
 
+# result = minimize(orientation_cost_function,initial_guess,method='SLSQP',bounds=bnds,
+#                   options={'ftol': 1e-2, 'eps': 1e-1,'maxiter': 10,'disp': True})
+#result = minimize(orientation_cost_function,initial_guess,method='Powell',bounds=bnds, tol=1e-2,
+#                 options={'ftol': 1e-2, 'eps': 10,'maxiter': 10,'disp': True})#, constraints=module_constraint)
+
+# result = differential_evolution(orientation_cost_function, bounds=bnds, disp=True, workers=1, maxiter=10)
+
+
+# result = dual_annealing(orientation_cost_function, bounds=[(-10, 10), (-10, 10), (-10, 10)])
+# result = least_squares(orientation_cost_function, initial_guess, bounds=([-100, -100, -100], [100, 100, 100]))
+# result = basinhopping(orientation_cost_function, initial_guess, niter=10, T=1.0, stepsize=0.5, minimizer_kwargs=None, take_step=None, accept_test=None, callback=None, interval=50, disp=True, niter_success=None, seed=None)   
+# result = differential_evolution(orientation_cost_function, bounds=[(-10, 10), (-10, 10), (-10, 10)], disp=True)
 
 # # second pose
+#translation2 = [0.0,0.0,0.5]
+orientation2 = [0,0,0]
+
+#orientation2 = result.x
+quaternion2 = euler_to_quaternion(orientation2)
+
+# quaternion2 = axis_angle_to_quaternion(orientation2[0:3],orientation2[3])
 
 
+# theta = np.linalg.norm(orientation2)
+# axis = orientation2/theta
+# orientation2 = np.concatenate((axis, [theta]))
+# quaternion2 = axis_angle_to_quaternion(orientation2[0:3],orientation2[3])
 
-translation2 = [0.0,0.0,0.5]
-# quaternion2 = euler_to_quaternion((0,1.57,0.9))
-quaternion2 = normalize_quaternion(euler_to_quaternion(result.x))
-
+quaternion2 = normalize_quaternion(quaternion2)
 depth_map2, object_pixels2 = generate_depth_map(object_name,translation2, quaternion2)
 obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
 obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)    
-cv2.imshow("Depth Map2", depth_map2)
+cv2.imshow("depth_map2", depth_map2)
 
 
 # Retrieve objects point clouds and resample them
@@ -657,11 +761,32 @@ nan_depth_index = mask_matrix[:,2]
 point_cloud_real = point_cloud_real[nan_depth_index]
 point_cloud_cad = point_cloud_cad[nan_depth_index]
 
+# rotate point cloud in the camera frame first
+nvisii_R_camera = np.array([[1,0,0],[0,-1,0],[0,0,-1]])
+# point_cloud_real = nvisii_R_camera.T @ point_cloud_real.T
+# point_cloud_cad = nvisii_R_camera.T @ point_cloud_cad.T
+# point_cloud_real = point_cloud_real.T
+# point_cloud_cad = point_cloud_cad.T
+
+
 plot_pointcloud(point_cloud_real,"point_cloud_real")
 plot_pointcloud(point_cloud_cad,"point_cloud_cad")
 
-print(len(point_cloud_real))
-print(len(point_cloud_cad))
+#### brief test lemma umeyama rotation
+# R = find_rotation_matrix(point_cloud_real, point_cloud_cad)
+# R2 = quaternion_to_rotation_matrix(quaternion2)
+
+# axis, angle = rotation_matrix_to_axis_angle(R)
+# q_test = axis_angle_to_quaternion(axis, angle)
+# q_test = normalize_quaternion(q_test)
+# depth_test, object_pixels_test = generate_depth_map(object_name,translation2, q_test)
+# cv2.imshow("depth_test", depth_test)
+# print("axis", axis)
+# print("angle", angle)
+# print("R", R)
+
+
+####
 
 # now we have two ordered point clouds, we can run Umeyama and retrieve the relative translation, orientation and scale 
 R, c, t = kabsch_umeyama(point_cloud_real, point_cloud_cad)
@@ -672,29 +797,50 @@ print("relative orientation", R)
 
 point_cloud_cad_transformed = np.array([t + c * R @ b for b in point_cloud_cad])
 
-import matplotlib
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 xs = [point[0] for point in point_cloud_real]
 ys = [point[1] for point in point_cloud_real]
 zs = [point[2] for point in point_cloud_real]
-ax.scatter(xs, ys, zs)
+ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
 xs = [point[0] for point in point_cloud_cad_transformed]
 ys = [point[1] for point in point_cloud_cad_transformed]
 zs = [point[2] for point in point_cloud_cad_transformed]
-ax.scatter(xs, ys, zs)
+ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
+xs = [point[0] for point in point_cloud_cad]
+ys = [point[1] for point in point_cloud_cad]
+zs = [point[2] for point in point_cloud_cad]
+ax.scatter(xs, ys, zs, c='r'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
 # plt.show()
 plt.savefig("Result" + '.png')
 
-# compute real object absolute pose wrt camera frame
+#####################################################
+# Compute real object estimated pose wrt camera frame 
+
 R2 = quaternion_to_rotation_matrix(quaternion2)
-print("real object position", t + translation2)
-print("real object orientation", R*R2)
-print("real object scale", mesh_scale*c)
+
+cam_T_cad = np.eye(4)
+cam_T_cad[:3, :3] = mesh_scale_cad*R2
+cam_T_cad[:3, 3] = translation2
+
+
+real_T_cad = np.eye(4)
+real_T_cad[:3, :3] = c*R
+real_T_cad[:3, 3] = t
+
+cam_T_real = cam_T_cad @ np.linalg.inv(real_T_cad)
+
+estimated_p_real = cam_T_real[:3, 3]
+estimated_R_real = normalize_rotation_matrix(mesh_scale_cad*c*cam_T_real[:3, :3])
+estimated_scale_real = mesh_scale_cad*c
+
+
+print("real object position", estimated_p_real)
+print("real object orientation", estimated_R_real) 
+print("real object scale", estimated_scale_real)
 
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
-
 nvisii.deinitialize()
 
