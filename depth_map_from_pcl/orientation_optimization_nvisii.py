@@ -259,14 +259,32 @@ def orientation_cost_function(orientation):
                     cost = cost + 1
                 else:
                     # print("depth_values", d1,d2)
-                    cost = cost + pow((d1-d2),2)
+                    cost = cost + 1*pow((d1-d2),2)
                     
 
-    # cost = cost/(w*h)
+    #cost = cost/(w*h)
     cost = cost/(h_image*w_image)
+    # cost = cost/(h1*w1)
     cost = cost + 0*(aspect_ratio_1-aspect_ratio_2)**2 
-        
     
+
+    # # Replace NaN values in the depth arrays
+    # res_image1 = np.nan_to_num(resized_image1_array, nan=10.0)
+    # res_image2 = np.nan_to_num(resized_image2_array, nan=10.0)
+
+
+    # # Generate edge maps for the real and virtual depth arrays
+    # edge_map1 = cv2.Sobel(res_image1, cv2.CV_64F, 1, 1, ksize=1)
+    # edge_map2 = cv2.Sobel(res_image2, cv2.CV_64F, 1, 1, ksize=1)
+
+    # cv2.imshow("edge_map1", edge_map1)
+    # cv2.imshow("edge_map2", edge_map2)
+    # edge_difference = edge_map1 - edge_map2
+    # edge_difference = np.nan_to_num(edge_difference, nan=1.0)
+    # delta = 1.0
+    # edge_huber_loss = np.where(np.abs(edge_difference) < delta, 0.5 * np.square(edge_difference), delta * (np.abs(edge_difference) - 0.5 * delta))
+
+    # cost = cost + np.nansum(edge_huber_loss)/(w_image*h_image)
     print("orientation", orientation)
     print("cost value", cost)
     print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
@@ -615,7 +633,7 @@ initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
 
 
 #  Euler angles rapresentation
-euler_angles = [0,0,0] # radians - roll pitch and yaw
+euler_angles = [0.6,0.4,1.69] # radians - roll pitch and yaw
 quaternion_real = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
 
 # axis-angle rapresentation
@@ -663,15 +681,16 @@ translation_cad = compute_object_center(object_pixels, 1.3, camera_intrinsic)
 # initial_guess = [0.1,0.1,0.1,0]#0.09950372,0.001,0.99503719,1.00498756] # axis angle
 # bnds = ((0.0001, 1), (0.0001, 1), (0.0001, 1), (0, 1))
 
-initial_guess = [0,0,np.pi] # vector r'*theta - r' and theta are the axis and angle of rotation
+initial_guess = [0*np.pi,1*np.pi,0*np.pi/2] # vector r'*theta - r' and theta are the axis and angle of rotation
 module_constraint = NonlinearConstraint(lambda x: np.linalg.norm(x), 0, 2*np.pi)
 
 
-# result = minimize(orientation_cost_function,initial_guess,method='SLSQP',bounds=bnds,
-#                   options={'ftol': 1e-2, 'eps': 1e-1,'maxiter': 10,'disp': True})
+# result = minimize(orientation_cost_function,initial_guess,method='Powell',
+#                   options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True})
 result = minimize(orientation_cost_function,initial_guess,method='SLSQP', tol=1e-4,
-                options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True}, constraints=module_constraint)
-
+                options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 100,'disp': True}, constraints=module_constraint)
+# result = minimize(orientation_cost_function,result.x,method='SLSQP', tol=1e-4,
+#                 options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 100,'disp': True}, constraints=module_constraint)
 # result = differential_evolution(orientation_cost_function, bounds=bnds, disp=True, workers=1, maxiter=10)
 
 
