@@ -213,7 +213,7 @@ def orientation_cost_function(orientation):
         theta = np.linalg.norm(orientation)
         axis = orientation/theta
     else:
-        theta = 0
+        theta = 2*np.pi #identity
         axis = [0,0,1]
         
     print("axis", axis)
@@ -227,7 +227,7 @@ def orientation_cost_function(orientation):
     quaternion2 = axis_angle_to_quaternion(orientation[0:3],orientation[3])
     
     quaternion2 = normalize_quaternion(quaternion2)
-
+    print(quaternion2)
     depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
    
     # # crop object image
@@ -615,7 +615,7 @@ initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
 
 
 #  Euler angles rapresentation
-euler_angles = [0,1.57,1.57] # radians - roll pitch and yaw
+euler_angles = [0,0,0] # radians - roll pitch and yaw
 quaternion_real = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
 
 # axis-angle rapresentation
@@ -663,14 +663,14 @@ translation_cad = compute_object_center(object_pixels, 1.3, camera_intrinsic)
 # initial_guess = [0.1,0.1,0.1,0]#0.09950372,0.001,0.99503719,1.00498756] # axis angle
 # bnds = ((0.0001, 1), (0.0001, 1), (0.0001, 1), (0, 1))
 
-initial_guess = [0,1.57,1.57] # vector r'*theta - r' and theta are the axis and angle of rotation
+initial_guess = [0,0,np.pi] # vector r'*theta - r' and theta are the axis and angle of rotation
 module_constraint = NonlinearConstraint(lambda x: np.linalg.norm(x), 0, 2*np.pi)
 
 
 # result = minimize(orientation_cost_function,initial_guess,method='SLSQP',bounds=bnds,
 #                   options={'ftol': 1e-2, 'eps': 1e-1,'maxiter': 10,'disp': True})
-result = minimize(orientation_cost_function,initial_guess,method='Powell', tol=1e-2,
-                options={'ftol': 1e-2, 'eps': 10,'maxiter': 10,'disp': True}, constraints=module_constraint)
+result = minimize(orientation_cost_function,initial_guess,method='SLSQP', tol=1e-4,
+                options={'ftol': 1e-4, 'eps': 1e-1,'maxiter': 10,'disp': True}, constraints=module_constraint)
 
 # result = differential_evolution(orientation_cost_function, bounds=bnds, disp=True, workers=1, maxiter=10)
 
