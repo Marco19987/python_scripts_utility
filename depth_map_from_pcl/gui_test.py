@@ -1,3 +1,41 @@
+import tkinter as tk
+import numpy as np
+
+def rotation_matrix_to_euler_angles(R):
+    # Check that the rotation matrix is valid
+    assert np.allclose(np.linalg.det(R), 1.0), "Invalid rotation matrix"
+
+    # Extract the rotation angles
+    roll = np.arctan2(R[2, 1], R[2, 2])
+    pitch = np.arctan2(-R[2, 0], np.sqrt(R[2, 1]**2 + R[2, 2]**2))
+    yaw = np.arctan2(R[1, 0], R[0, 0])
+
+    return roll, pitch, yaw
+def evaluate_cost(val):
+    
+    # transform in roll pitch yaw
+    rx = slider1.get()
+    ry = slider2.get()
+    rz = slider3.get()
+    print("rx: ", rx)
+    print("ry: ", ry)
+    print("rz: ", rz)
+    
+    quaternion = euler_to_quaternion([rx,ry,rz])
+    quaternion = normalize_quaternion(quaternion)
+    R = quaternion_to_rotation_matrix(quaternion)
+    axis, angle = rotation_matrix_to_axis_angle(R)
+    orientation = axis*angle
+    
+    
+    cost, depth_map2, res1,res2 = orientation_cost_function(orientation)
+    print("cost: ", cost)
+    cv2.imshow("depth_map", depth_map)
+    cv2.imshow("depth_map2", depth_map2)
+    cv2.imshow("Real image", (res1))
+    cv2.imshow("Cad model", (res2))
+    cv2.waitKey(1)
+    
 import numpy as np
 from scipy.optimize import minimize, dual_annealing,NonlinearConstraint, least_squares,basinhopping,differential_evolution, OptimizeResult
 import cv2
@@ -356,13 +394,11 @@ def rotation_matrix_to_quaternion(R):
 
 def orientation_cost_function(orientation):
     
-    # theta = np.linalg.norm(orientation)
-    # axis = orientation/theta if theta != 0 else [0,0,1]
-    # orientation = np.concatenate((axis, [theta if theta != 0 else 2*np.pi]))
-    # quaternion2 = normalize_quaternion(axis_angle_to_quaternion(orientation[0:3],orientation[3]))
-    
-    # euler angle
-    quaternion2 = normalize_quaternion(euler_to_quaternion(orientation))
+    theta = np.linalg.norm(orientation)
+    axis = orientation/theta if theta != 0 else [0,0,1]
+    orientation = np.concatenate((axis, [theta if theta != 0 else 2*np.pi]))
+
+    quaternion2 = normalize_quaternion(axis_angle_to_quaternion(orientation[0:3],orientation[3]))
     
     # change cad orientation
     depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
@@ -394,35 +430,18 @@ def orientation_cost_function(orientation):
                     cost = cost + 1
                 else:
                     # print("depth_values", d1,d2)
-                    cost = cost + 1*pow((d1-d2),2)
+                    cost = cost + pow((d1-d2),2)
     
     
-    cost = cost/(h_image*w_image) + 0.1*abs(aspect_ratio_1-aspect_ratio_2)
-        
-    # Create masked arrays
-    # masked_image1 = np.nan_to_num(resized_image1_array, nan=1000.0)
-    # masked_image2 = np.nan_to_num(resized_image2_array, nan=1000.0)
-
-    # # Apply Sobel operator to both images
-    # edges1 = cv2.Sobel(masked_image1, cv2.CV_64F, 1, 1, ksize=5)
-    # edges2 = cv2.Sobel(masked_image2, cv2.CV_64F, 1, 1, ksize=5)
-    # edges1 = normalize_depth_map(edges1)
-    # edges2 = normalize_depth_map(edges2)
-    # cv2.imshow("edge_map1", edges1)
-    # cv2.imshow("edge_map2", edges2)
-
-
+    cost = cost/(h_image*w_image) + 0*abs(aspect_ratio_1-aspect_ratio_2)
     
     # print("orientation", orientation)
-    print("cost value", cost)
-    # # print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
+    # print("cost value", cost)
+    # print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
     
-    # cv2.imshow("depth_map2", depth_map2)
-    # cv2.imshow("Real image", resized_image1_array)
-    # cv2.imshow("Cad model", resized_image2_array)
-    # cv2.waitKey(0)
 
-    return cost
+
+    return cost, depth_map2, resized_image1_array, resized_image2_array
 
 def euler_to_quaternion(euler_angles):
     """
@@ -810,14 +829,14 @@ def icp(a, b, init_pose=(0,0,0), init_rotation = (1,0,0,0,1,0,0,0,1), no_iterati
         # src = src_transformed
 
         mean_error = np.mean(distances)
-        # print("Mean error:", mean_error)
+        print("Mean error:", mean_error)
         if np.abs(prev_error - mean_error) < 0.000001:
             break
         prev_error = mean_error
     
 
     #Transform the original source cloud (not the working copy used in the iterations)
-    # print("Final transformation:", overall_T)
+    print("Final transformation:", overall_T)
     
     # fig = plt.figure()
     # ax = fig.add_subplot(111, projection='3d')
@@ -899,14 +918,14 @@ camera_intrinsic = [focal_length_x,focal_length_y,principal_point_x,principal_po
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/banana.obj"  
-mesh_scale_real = 0.01 #0.01 banana
+file_name = "cad_models/rubber_duck_toy_1k.gltf"  
+mesh_scale_real = 1 #0.01 banana
 max_virtual_depth = 5 #[m]
 mesh_scale = mesh_scale_real
 
 
 # Pose real object
-translation_real = np.array([0.1,-0.1,0.7]) # position of the object in meters wrt camera
+translation_real = np.array([0,-0,1]) # position of the object in meters wrt camera
 euler_angles = [3,3.24,0] # radians - roll pitch and yaw
 import random
 euler_angles = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
@@ -920,7 +939,6 @@ initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
 # Generate the real depth map
 depth_map, object_pixels = generate_depth_map(object_name,translation_real, quaternion_real) # The first time call it two times due to nvisii bug
 depth_map, object_pixels = generate_depth_map(object_name,translation_real, quaternion_real)
-cv2.imshow("depth_map", depth_map)
 # crop object image
 obj_depth_image = crop_object_image(depth_map,object_pixels)
 
@@ -930,228 +948,26 @@ obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
 
 # change object mesh to simulate differences between real object and cad
 new_object_name = "banana2"
-new_object_path = "cad_models/banana.obj"
+new_object_path = file_name #"cad_models/banana.obj"
 mesh_scale_cad = mesh_scale_real*1
 mesh_scale = mesh_scale_cad # change mesh scale to test different scales
 
 change_object_mesh(object_name, new_object_name, new_object_path)
-translation_cad = compute_object_center(object_pixels, 0.7, camera_intrinsic)
-
-# cad model point cloud
-pcl_obj, faces = read_obj_file(new_object_path)
-pcl_obj_norm = normalize_point_cloud(translate_centroid_to_origin(pcl_obj*mesh_scale_cad))
-plot_pointcloud(pcl_obj_norm, "pcl_obj_norm")
-
-# ICP - to find a good initial guess
-pcl_object_real = np.array(depth_to_pointcloud(obj_depth_image, camera_intrinsic, object_pixels))
-pcl_object_real_normalized = normalize_point_cloud(translate_centroid_to_origin((pcl_object_real)))
-
-plot_pointcloud(pcl_object_real_normalized, "pcl_object_normalized")
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-xs = [point[0] for point in pcl_obj_norm]
-ys = [point[1] for point in pcl_obj_norm]
-zs = [point[2] for point in pcl_obj_norm]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [point[0] for point in pcl_object_real_normalized]
-ys = [point[1] for point in pcl_object_real_normalized]
-zs = [point[2] for point in pcl_object_real_normalized]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-ax.view_init(elev=20, azim=30)
-plt.savefig("overlap" + '.png')
-
-R_init  = axis_angle_to_rotation_matrix([0,0,1],0)
-transformation, distances, rotated_pcl, indices, mean_error = icp(np.array(pcl_obj_norm),np.array(pcl_object_real_normalized), init_pose=(0,0,0),init_rotation=R_init, no_iterations = 30)
+translation_cad = compute_object_center(object_pixels, 1.3, camera_intrinsic)
 
 
-axis, theta = rotation_matrix_to_axis_angle(normalize_rotation_matrix(transformation[:3,:3]))
-initial_guess_icp = axis*theta
+root = tk.Tk()
 
-# Optimization of the orientation 
+slider1 = tk.Scale(root, from_=-2*np.pi, to=2*np.pi, resolution=0.01, orient=tk.HORIZONTAL, label="Slider 1", length=400, command=evaluate_cost)
+slider1.pack()
 
-# Define your list of initial guesses
-initial_guesses = [[0,0,0],
-                   [np.pi/2,np.pi/2,np.pi/2], [np.pi, np.pi, np.pi] ,[3*np.pi/2,3*np.pi/2,3*np.pi/2],
-                   [np.pi/2,np.pi/2,0], [0,np.pi/2,np.pi/2],[np.pi/2,0,np.pi/2],
-                   [np.pi/2, 0, 0], [np.pi, 0, 0], [3*np.pi/2, 0, 0], 
-                   [0, np.pi/2, 0], [0, np.pi, 0], [0, 3*np.pi/2, 0], 
-                   [0, 0, np.pi/2], [0, 0, np.pi], [0, 0, 3*np.pi/2]]
+slider2 = tk.Scale(root, from_=-2*np.pi, to=2*np.pi, resolution=0.01, orient=tk.HORIZONTAL, label="Slider 2", length=400, command=evaluate_cost)
+slider2.pack()
 
-Rstart = transformation[:3,:3]
+slider3 = tk.Scale(root, from_=-2*np.pi, to=2*np.pi, resolution=0.01, orient=tk.HORIZONTAL, label="Slider 3", length=400, command=evaluate_cost)
+slider3.pack()
 
-initial_guesses_tmp = []
-for guess in initial_guesses:
-    if np.linalg.norm(guess) != 0:
-        axis = guess/np.linalg.norm(guess) 
-    else:
-        axis = [0,0,1]
-    theta = np.linalg.norm(guess)
-    Ratt = axis_angle_to_rotation_matrix(axis,theta) # additional rotation from the Rstart
-    axis_, theta_ = rotation_matrix_to_axis_angle(normalize_rotation_matrix(Rstart @ Ratt))
-    initial_guesses_tmp.append(axis_*theta_)
-initial_guesses = initial_guesses_tmp
+button = tk.Button(root, text="evaluate_cost", command=evaluate_cost)
+button.pack()
 
-
-
-initial_guesses = [initial_guess_icp]
-#initial_guesses = [[0,0.01,0]]
-initial_guess = [0,0,0]
-bnds = ((-2*np.pi, 2*np.pi), (-2*np.pi, 2*np.pi), (-2*np.pi, 2*np.pi))
-module_constraint = NonlinearConstraint(lambda x: np.linalg.norm(x), 0, 2*np.pi)
-
-def optimize(guess):
-    return minimize(orientation_cost_function, guess,method="Powell", tol = 1e-3,bounds=bnds, options={'ftol': 1e-3,'xtol' : 1e-3, 'eps': 1e-1,'maxiter': 30,'disp': True})#, constraints=module_constraint)
-    theta = np.linalg.norm(guess)
-    axis = guess[0:3]/theta if theta != 0 else [0,0,1]
-    R_init = axis_angle_to_rotation_matrix(axis,theta)
-    transformation, distances, rotated_pcl, indices, mean_error = icp(np.array(pcl_obj_norm),np.array(pcl_object_real_normalized), init_pose=(0,0,0),init_rotation=R_init, no_iterations = 30)
-    axis, theta = rotation_matrix_to_axis_angle(normalize_rotation_matrix(transformation[:3,:3]))
-    # create a struct result with fields success, x, fun, message
-    result = OptimizeResult()
-    result.success = True
-    result.x = axis*theta
-    result.fun = mean_error
-    result.message = "Optimization terminated successfully."
-    return result
-    
-#optimize(initial_guess)
-# try evloutional algorithm
-#result = differential_evolution(orientation_cost_function, bounds=bnds, maxiter=10, popsize=10, disp=True, workers=1, updating='deferred')
-
-#Create a ThreadPoolExecutor
-with ThreadPoolExecutor(max_workers=20) as executor:
-    # Use the executor to map the optimize function to the initial guesses
-    results = executor.map(optimize, initial_guesses)
-
-# results now contains the result of the optimization for each initial guess
-result_cost = []
-results_array = []
-for result in results:
-    print("Success:" + str(result.success))
-    print("Result:" + str(result.x))
-    print("Cost:" + str(result.fun))
-    print("Message:" + str(result.message))
-    result_cost.append(result.fun)
-    results_array.append(result.x)
-
-
-# Elaborate result after optimization
-
-# # get pose cad model
-# cont = 0
-# for result in results_array:
-#     orientation2 = result
-#     theta = np.linalg.norm(orientation2)
-#     axis = orientation2/theta
-#     orientation2 = np.concatenate((axis, [theta]))
-#     quaternion2 = axis_angle_to_quaternion(orientation2[0:3],orientation2[3])
-#     quaternion2 = normalize_quaternion(quaternion2)
-
-#     # place it in the virtual world
-#     depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
-#     obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-#     obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)    
-#     cv2.imshow("depth_map2", depth_map2)
-
-
-#     # Retrieve objects point clouds and resample them to get two ordered point clouds
-#     resized_image_real_object, resized_image_cad_model = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-#     cv2.imshow("resized_image_real_object", normalize_depth_map(resized_image_real_object))
-#     cv2.imshow("resized_image_cad_model", normalize_depth_map(resized_image_cad_model))
-#     cv2.waitKey(0)    
-#     print("result",result_cost[cont])
-#     print("result",result)
-#     cont = cont + 1
-    
-orientation2 = results_array[np.argmin(result_cost)]
-# theta = np.linalg.norm(orientation2)
-# axis = orientation2/theta
-# orientation2 = np.concatenate((axis, [theta]))
-# quaternion2 = axis_angle_to_quaternion(orientation2[0:3],orientation2[3])
-
-quaternion2 = euler_to_quaternion(orientation2)
-quaternion2 = normalize_quaternion(quaternion2)
-
-# place it in the virtual world
-depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
-obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)    
-cv2.imshow("depth_map2", depth_map2)
-
-
-# Retrieve objects point clouds and resample them to get two ordered point clouds
-resized_image_real_object, resized_image_cad_model = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-cv2.imshow("resized_image_real_object", normalize_depth_map(resized_image_real_object))
-cv2.imshow("resized_image_cad_model", normalize_depth_map(resized_image_cad_model))
-
-res_height,res_width = resized_image_real_object.shape
-resampled_depth_map_real = resample_depth_map(depth_map, object_pixels,res_width,res_height)
-resampled_depth_map_cad = resample_depth_map(depth_map2, object_pixels2,res_width,res_height)
-
-point_cloud_real = depth_to_pointcloud_fromlist(resampled_depth_map_real,camera_intrinsic)
-point_cloud_cad = depth_to_pointcloud_fromlist(resampled_depth_map_cad,camera_intrinsic)
-
-point_cloud_real = np.array(point_cloud_real)
-point_cloud_cad = np.array(point_cloud_cad)
-
-mask = ~np.isnan(point_cloud_real) & ~np.isnan(point_cloud_cad)
-mask_matrix = mask.reshape(res_width*res_height,3)
-nan_depth_index = mask_matrix[:,2]
-
-point_cloud_real = point_cloud_real[nan_depth_index]
-point_cloud_cad = point_cloud_cad[nan_depth_index]
-
-plot_pointcloud(point_cloud_real,"point_cloud_real")
-plot_pointcloud(point_cloud_cad,"point_cloud_cad")
-
-# now we have two ordered point clouds, we can run Umeyama and retrieve the relative translation, orientation and scale 
-R, c, t = kabsch_umeyama(point_cloud_real, point_cloud_cad)
-
-print("relative translation", t)
-print("relative scale", c)
-print("relative orientation", R)
-
-point_cloud_cad_transformed = np.array([t + c * R @ b for b in point_cloud_cad])
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-xs = [point[0] for point in point_cloud_real]
-ys = [point[1] for point in point_cloud_real]
-zs = [point[2] for point in point_cloud_real]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [point[0] for point in point_cloud_cad_transformed]
-ys = [point[1] for point in point_cloud_cad_transformed]
-zs = [point[2] for point in point_cloud_cad_transformed]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [point[0] for point in point_cloud_cad]
-ys = [point[1] for point in point_cloud_cad]
-zs = [point[2] for point in point_cloud_cad]
-ax.scatter(xs, ys, zs, c='r'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [translation_cad[0]]
-ys = [translation_cad[1]]
-zs = [translation_cad[2]]
-ax.scatter(xs, ys, zs, c='g'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [translation_real[0]]
-ys = [translation_real[1]]
-zs = [translation_real[2]]
-ax.scatter(xs, ys, zs, c='b'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-# plt.show()
-plt.savefig("Result" + '.png')
-
-#####################################################
-# Compute real object estimated pose wrt camera frame 
-
-R2 = quaternion_to_rotation_matrix(quaternion2)
-
-estimated_p_real = t + c * R @ np.array(translation_cad).T
-estimated_R_real = normalize_rotation_matrix(c * R @ R2)  #???
-estimated_scale_real = mesh_scale_cad*c
-
-print("real object position", estimated_p_real)
-print("real object orientation", estimated_R_real) 
-print("real object scale", estimated_scale_real)
-
-cv2.waitKey(0)
-cv2.destroyAllWindows()
-nvisii.deinitialize()
-
+root.mainloop()
