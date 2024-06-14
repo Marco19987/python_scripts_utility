@@ -347,6 +347,7 @@ def rotation_matrix_to_quaternion(R):
     :param R: 3x3 rotation matrix
     :return: quaternion as [x, y, z, w]
     """
+    
     q0 = np.sqrt(1 + R[0, 0] + R[1, 1] + R[2, 2]) / 2
     q1 = (R[2, 1] - R[1, 2]) / (4 * q0)
     q2 = (R[0, 2] - R[2, 0]) / (4 * q0)
@@ -381,48 +382,212 @@ def orientation_cost_function(orientation):
     #                           np.where(np.isnan(resized_image1_array) | np.isnan(resized_image2_array), 1, 
     #                                    1*pow((resized_image1_array - resized_image2_array),2))))
     
-    cost = 0
-    for w in range(w_image):
-        for h in range(h_image):
-            d1 = resized_image1_array[h][w]
-            d2 = resized_image2_array[h][w]
+    # cost = 0
+    # for w in range(w_image):
+    #     for h in range(h_image):
+    #         d1 = resized_image1_array[h][w]
+    #         d2 = resized_image2_array[h][w]
                         
-            if math.isnan(d1) and math.isnan(d2):  
-                cost = cost + 0 # is good
-            else:
-                if math.isnan(d2) or math.isnan(d1):
-                    cost = cost + 1
-                else:
-                    # print("depth_values", d1,d2)
-                    cost = cost + 1*pow((d1-d2),2)
+    #         if math.isnan(d1) and math.isnan(d2):  
+    #             cost = cost + 0 # is good
+    #         else:
+    #             if math.isnan(d2) or math.isnan(d1):
+    #                 cost = cost + 1
+    #             else:
+    #                 # print("depth_values", d1,d2)
+    #                 cost = cost + 1*pow((d1-d2),2)
     
     
-    cost = cost/(h_image*w_image) + 0.1*abs(aspect_ratio_1-aspect_ratio_2)
-        
-    # Create masked arrays
-    # masked_image1 = np.nan_to_num(resized_image1_array, nan=1000.0)
-    # masked_image2 = np.nan_to_num(resized_image2_array, nan=1000.0)
-
-    # # Apply Sobel operator to both images
-    # edges1 = cv2.Sobel(masked_image1, cv2.CV_64F, 1, 1, ksize=5)
-    # edges2 = cv2.Sobel(masked_image2, cv2.CV_64F, 1, 1, ksize=5)
-    # edges1 = normalize_depth_map(edges1)
-    # edges2 = normalize_depth_map(edges2)
-    # cv2.imshow("edge_map1", edges1)
-    # cv2.imshow("edge_map2", edges2)
-
-
+    # cost = cost/(h_image*w_image) + 0.1*abs(aspect_ratio_1-aspect_ratio_2)
     
-    # print("orientation", orientation)
+    # get point cloud
+    pcl_object_2 = np.array(depth_to_pointcloud(obj_depth_image2, camera_intrinsic, object_pixels))
+    pcl_object_2_normalized = normalize_point_cloud(translate_centroid_to_origin((pcl_object_2)))
+    
+    # compute svd for pcl_object_1 and pcl_object_2
+    U1, S1, V1 = np.linalg.svd(pcl_object_real_normalized, full_matrices=False)
+    U2, S2, V2 = np.linalg.svd(pcl_object_2_normalized, full_matrices=False)
+    
+    # compute cost ad the difference between the singular values
+    cost = np.linalg.norm(S1 - S2)
+    
+    # compute angles between the singular vectors v1 and v2
+    theta_autovector_1 = np.arctan2(np.linalg.norm(np.cross(V1[0], V2[0])), np.dot(V1[0], V2[0]))
+    theta_autovector_2 = np.arctan2(np.linalg.norm(np.cross(V1[1], V2[1])), np.dot(V1[1], V2[1]))
+    theta_autovector_3 = np.arctan2(np.linalg.norm(np.cross(V1[2], V2[2])), np.dot(V1[2], V2[2]))
+    print("theta_autovector_1", theta_autovector_1)
+    print("theta_autovector_2", theta_autovector_2)
+    print("theta_autovector_3", theta_autovector_3)
+    
+    cost = cost + (theta_autovector_1**2 + theta_autovector_2**2 + theta_autovector_3**2)
+    
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    xs = [point[0] for point in pcl_object_2_normalized]
+    ys = [point[1] for point in pcl_object_2_normalized]
+    zs = [point[2] for point in pcl_object_2_normalized]
+    ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
+    # xs = [point[0] for point in pcl_object_real_normalized]
+    # ys = [point[1] for point in pcl_object_real_normalized]
+    # zs = [point[2] for point in pcl_object_real_normalized]
+    # ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
+    # orthogonal view plan xy
+    # ax.view_init(elev=90, azim=45)
+    # plot also the V1 and V2 frames
+    ax.quiver(0, 0, 0, V1[0][0], V1[0][1], V1[0][2], color='r')
+    ax.quiver(0, 0, 0, V1[1][0], V1[1][1], V1[1][2], color='g')
+    ax.quiver(0, 0, 0, V1[2][0], V1[2][1], V1[2][2], color='b')
+    ax.quiver(0, 0, 0, V2[0][0], V2[0][1], V2[0][2], color='r')
+    ax.quiver(0, 0, 0, V2[1][0], V2[1][1], V2[1][2], color='g')
+    ax.quiver(0, 0, 0, V2[2][0], V2[2][1], V2[2][2], color='b')
+    
+    plt.savefig("cost_pcl" + '.png')
+    
+    
+    print("Singular values", S1, S2)
+    
+    print("orientation", orientation)
     print("cost value", cost)
-    # # print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
+    print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
     
-    # cv2.imshow("depth_map2", depth_map2)
-    # cv2.imshow("Real image", resized_image1_array)
-    # cv2.imshow("Cad model", resized_image2_array)
-    # cv2.waitKey(0)
+    cv2.imshow("depth_map2", depth_map2)
+    cv2.imshow("Real image", resized_image1_array)
+    cv2.imshow("Cad model", resized_image2_array)
+    cv2.waitKey(0)
 
     return cost
+
+def test_rotation_optimization(guess):
+    
+    U1, S1, V1 = np.linalg.svd(pcl_object_real_normalized, full_matrices=False)
+
+    cost = 1000
+    orientation = guess
+    U2, S2, V2 = [],[],[]
+    Rold = np.eye(3)
+    Vold = np.eye(3)
+    while cost>0.1:
+        # euler angle
+        quaternion2 = normalize_quaternion((orientation))
+        
+        # change cad orientation
+        depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
+        obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
+        
+        # get point cloud
+        pcl_object_2 = np.array(depth_to_pointcloud(obj_depth_image2, camera_intrinsic, object_pixels))
+        pcl_object_2_normalized = normalize_point_cloud(translate_centroid_to_origin((pcl_object_2)))
+        
+        # compute svd for pcl_object_1 and pcl_object_2
+        U2, S2, V2 = np.linalg.svd(pcl_object_2_normalized, full_matrices=False)
+        
+        # compute cost ad the difference between the singular values
+        cost = np.linalg.norm(S1 - S2)
+        
+        # compute angles between the singular vectors v1 and v2
+        theta_autovector_1 = np.arctan2(np.linalg.norm(np.cross(V1[0], V2[0])), np.dot(V1[0], V2[0]))
+        theta_autovector_2 = np.arctan2(np.linalg.norm(np.cross(V1[1], V2[1])), np.dot(V1[1], V2[1]))
+        theta_autovector_3 = np.arctan2(np.linalg.norm(np.cross(V1[2], V2[2])), np.dot(V1[2], V2[2]))
+        print("theta_autovector_1", theta_autovector_1)
+        print("theta_autovector_2", theta_autovector_2)
+        print("theta_autovector_3", theta_autovector_3)
+        
+        cost = cost + (theta_autovector_1**2 + theta_autovector_2**2 + theta_autovector_3**2)
+        
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        xs = [point[0] for point in pcl_object_2_normalized]
+        ys = [point[1] for point in pcl_object_2_normalized]
+        zs = [point[2] for point in pcl_object_2_normalized]
+        ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
+        xs = [point[0] for point in pcl_object_real_normalized]
+        ys = [point[1] for point in pcl_object_real_normalized]
+        zs = [point[2] for point in pcl_object_real_normalized]
+        ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
+        ax.view_init(elev=0, azim=45)
+        ax.quiver(0, 0, 0, V1[0][0], V1[1][0], V1[2][0], color='r')
+        ax.quiver(0, 0, 0, V1[0][1], V1[1][1], V1[2][1], color='g')
+        ax.quiver(0, 0, 0, V1[0][2], V1[1][2], V1[2][2], color='b')
+        ax.quiver(0, 0, 0, V2[0][0], V2[1][0], V2[2][0], color='r')
+        ax.quiver(0, 0, 0, V2[0][1], V2[1][1], V2[2][1], color='g')
+        ax.quiver(0, 0, 0, V2[0][2], V2[1][2], V2[2][2], color='b')
+        ax.quiver(0, 0, 0, Vold[0][0], Vold[1][0], Vold[2][0], color='r')
+        ax.quiver(0, 0, 0, Vold[0][1], Vold[1][1], Vold[2][1], color='g')
+        ax.quiver(0, 0, 0, Vold[0][2], Vold[1][2], Vold[2][2], color='b')
+        plt.savefig("cost_pcl" + '.png')
+        
+
+        # Compute the rotation matrix as rotx(theta_autovector_1) roty(theta_autovector_2) rotz(theta_autovector_3)
+        Rotx = np.array([[1, 0, 0], [0, np.cos(theta_autovector_1), -np.sin(theta_autovector_1)], [0, np.sin(theta_autovector_1), np.cos(theta_autovector_1)]])
+        Roty = np.array([[np.cos(theta_autovector_2), 0, np.sin(theta_autovector_2)], [0, 1, 0], [-np.sin(theta_autovector_2), 0, np.cos(theta_autovector_2)]])
+        Rotz = np.array([[np.cos(theta_autovector_3), -np.sin(theta_autovector_3), 0], [np.sin(theta_autovector_3), np.cos(theta_autovector_3), 0], [0, 0, 1]])
+        #Rot = np.dot(Rotz, np.dot(Roty, Rotx))
+        
+        # find a versor perpendicular to the two vectors v1(:,1) and v2(:,1)
+        
+        v1 = V1[:,0]
+        v2 = V2[:,0]
+        v = np.cross(v1, v2)
+        v = v/np.linalg.norm(v)
+        # compute the angle between the two vectors
+        theta_autovector_1 = np.arctan2(np.linalg.norm(np.cross(v1, v2)), np.dot(v1, v2))
+        theta = theta_autovector_1
+        
+     
+
+        # compute the rotation matrix
+        #Rot = np.eye(3) + np.sin(theta)*np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]) + (1 - np.cos(theta))*np.dot(v[:, None], v[None, :])
+        Rot = axis_angle_to_rotation_matrix(v, theta)
+        
+        Vold = Rot @ V2
+
+        
+        # do the same for the second vector
+        # v1 = V1[1]
+        # v2 = V2[1]
+        # v = np.cross(v1, v2)
+        # v = v/np.linalg.norm(v)
+        # # compute the angle between the two vectors
+
+        # theta = theta_autovector_2
+        # # compute the rotation matrix
+        # #Rot = np.dot(np.eye(3) + np.sin(theta)*np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]) + (1 - np.cos(theta))*np.dot(v[:, None], v[None, :]),Rot)
+        
+        # # do the same for the third vector
+        # v1 = V1[2]
+        # v2 = V2[2]
+        # v = np.cross(v1, v2)
+        # v = v/np.linalg.norm(v)
+        # # compute the angle between the two vectors
+        # theta = np.arccos(np.dot(v1, v2))
+        # theta = theta_autovector_3
+        # # compute the rotation matrix
+        # #Rot = np.dot(np.eye(3) + np.sin(theta)*np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]) + (1 - np.cos(theta))*np.dot(v[:, None], v[None, :]),Rot)
+        
+        
+        
+        Rot =  Rot
+        print("R", normalize_rotation_matrix(Rot))
+        orientation = rotation_matrix_to_quaternion(normalize_rotation_matrix(Rot))
+        
+
+        print("Singular values", S1, S2)
+        
+        print("orientation", orientation)
+        print("cost value", cost)
+        
+        cv2.imshow("Real image", obj_depth_image_normalized)
+        cv2.imshow("Cad model", normalize_depth_map(obj_depth_image2))
+        cv2.waitKey(0)
+
+    return cost
+
+
+
+
+
 
 def euler_to_quaternion(euler_angles):
     """
@@ -738,8 +903,8 @@ def rotation_matrix_to_axis_angle(R):
     return axis/np.linalg.norm(axis), theta
 
 def normalize_rotation_matrix(R):
-    U, S, VT = np.linalg.svd(R)
-    return U @ VT
+    U_, S_, VT_ = np.linalg.svd(R)
+    return U_ @ VT_
 
 def read_obj_file(file_name):
     try:
@@ -864,15 +1029,18 @@ def normalize_point_cloud(pcl):
     
     
     # Compute the mean of the point cloud
-    mean = np.mean(pcl, axis=0)
+    # mean = np.mean(pcl, axis=0)
 
-    # Compute the root mean square distance
-    #rmsd = np.sqrt(np.mean(np.sum((pcl - mean)**2, axis=1)))
-    rmsd = np.sqrt(np.mean(pcl**2))
-    # Scale the point cloud by dividing each coordinate by the rmsd
-    normalized_pcl = pcl / rmsd
+    # # Compute the root mean square distance
+    # #rmsd = np.sqrt(np.mean(np.sum((pcl - mean)**2, axis=1)))
+    # rmsd = np.sqrt(np.mean(pcl**2))
+    # # Scale the point cloud by dividing each coordinate by the rmsd
+    # normalized_pcl = pcl / rmsd
     
-    rmsd = np.sqrt((pcl ** 2).sum() / len(pcl))
+    # rmsd = np.sqrt((pcl ** 2).sum() / len(pcl))
+    
+    # divide pcl by the module of the point with the maximum module
+    normalized_pcl = pcl / np.linalg.norm(pcl, axis=1).max()
     
     return normalized_pcl
 
@@ -907,9 +1075,9 @@ mesh_scale = mesh_scale_real
 
 # Pose real object
 translation_real = np.array([0.1,-0.1,0.7]) # position of the object in meters wrt camera
-euler_angles = [3,3.24,0] # radians - roll pitch and yaw
-import random
-euler_angles = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
+euler_angles = [1,1.57,0.1] # radians - roll pitch and yaw
+# import random
+# euler_angles = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
 quaternion_real = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
 
 # initialize nvisii
@@ -995,12 +1163,13 @@ initial_guesses = initial_guesses_tmp
 
 initial_guesses = [initial_guess_icp]
 #initial_guesses = [[0,0.01,0]]
-initial_guess = [0,0,0]
+initial_guess = [0,1.57,0]
 bnds = ((-2*np.pi, 2*np.pi), (-2*np.pi, 2*np.pi), (-2*np.pi, 2*np.pi))
 module_constraint = NonlinearConstraint(lambda x: np.linalg.norm(x), 0, 2*np.pi)
 
+
 def optimize(guess):
-    return minimize(orientation_cost_function, guess,method="Powell", tol = 1e-3,bounds=bnds, options={'ftol': 1e-3,'xtol' : 1e-3, 'eps': 1e-1,'maxiter': 30,'disp': True})#, constraints=module_constraint)
+    return minimize(orientation_cost_function, guess,method="Powell", tol = 1e-3,bounds=bnds, options={'ftol': 1e-3,'xtol' : 1e-1, 'eps': 1e-1,'maxiter': 30,'disp': True})#, constraints=module_constraint)
     theta = np.linalg.norm(guess)
     axis = guess[0:3]/theta if theta != 0 else [0,0,1]
     R_init = axis_angle_to_rotation_matrix(axis,theta)
@@ -1013,8 +1182,10 @@ def optimize(guess):
     result.fun = mean_error
     result.message = "Optimization terminated successfully."
     return result
-    
-#optimize(initial_guess)
+ 
+ 
+test_rotation_optimization([0,0,0,1])    
+optimize(initial_guess)
 # try evloutional algorithm
 #result = differential_evolution(orientation_cost_function, bounds=bnds, maxiter=10, popsize=10, disp=True, workers=1, updating='deferred')
 
