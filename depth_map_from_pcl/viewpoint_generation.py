@@ -407,7 +407,7 @@ def orientation_cost_function(orientation):
             else:
                 if math.isnan(d2) or math.isnan(d1):
                     cost = cost + 1
-                    tmp2 = tmp2 + 1
+                    tmp2 = tmp2 + 0.5
                 else:
                     # print("depth_values", d1,d2)
                     cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
@@ -420,27 +420,27 @@ def orientation_cost_function(orientation):
     cost = cost/(h_image*w_image) + 0*abs(aspect_ratio_1-aspect_ratio_2)
     
     # Initiate ORB detector
-    # img1 = cv2.normalize(obj_depth_image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    # img2 = cv2.normalize(obj_depth_image2, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    img1 = cv2.normalize(obj_depth_image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    img2 = cv2.normalize(obj_depth_image2, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 
-    # orb = cv2.ORB_create()
+    orb = cv2.ORB_create()
 
-    # # Find the keypoints and descriptors with ORB
-    # kp1, des1 = orb.detectAndCompute(img1,None)
-    # kp2, des2 = orb.detectAndCompute(img2,None)
+    # Find the keypoints and descriptors with ORB
+    kp1, des1 = orb.detectAndCompute(img1,None)
+    kp2, des2 = orb.detectAndCompute(img2,None)
 
-    # # Create BFMatcher object
-    # bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    # Create BFMatcher object
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
 
-    # # Match descriptors
-    # matches = bf.match(des1,des2)
+    # Match descriptors
+    matches = bf.match(des1,des2)
 
-    # # Sort them in the order of their distance
-    # matches = sorted(matches, key = lambda x:x.distance)
+    # Sort them in the order of their distance
+    matches = sorted(matches, key = lambda x:x.distance)
 
-    # # Draw first 10 matches
-    # img3 = cv2.drawMatches(img1,kp1,img2,kp2,matches[:10],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-    # cv2.imshow('Matches',img3)
+    # Draw first 10 matches
+    img3 = cv2.drawMatches(img1,kp1,img2,kp2,matches[:10],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    cv2.imshow('Matches',img3)
     
     # # get point cloud
     # pcl_object_2 = np.array(depth_to_pointcloud(obj_depth_image2, camera_intrinsic, object_pixels))
@@ -1129,17 +1129,15 @@ camera_intrinsic = [focal_length_x,focal_length_y,principal_point_x,principal_po
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/rubber_duck_toy.obj"  
-mesh_scale_real = 1 #0.01 banana
+file_name = "cad_models/bowl.obj"  
+mesh_scale_real = 0.001 #0.01 banana
 max_virtual_depth = 5 #[m]
 mesh_scale = mesh_scale_real
 
 
-# Pose real object
-translation_real = np.array([0.1,-0.1,0.9]) # position of the object in meters wrt camera
+# Pose object
+translation = np.array([0.1,-0.1,0.9]) # position of the object in meters wrt camera
 euler_angles = [0,0,0] # radians - roll pitch and yaw
-# import random
-# euler_angles = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
 quaternion_real = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
 
 # initialize nvisii
@@ -1148,255 +1146,62 @@ initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
 
 
 # Generate the real depth map
-depth_map, object_pixels = generate_depth_map(object_name,translation_real, quaternion_real) # The first time call it two times due to nvisii bug
-depth_map, object_pixels = generate_depth_map(object_name,translation_real, quaternion_real)
-#cv2.imshow("depth_map", depth_map)
-# crop object image
-obj_depth_image = crop_object_image(depth_map,object_pixels)
-
-# normalize object depth map
-obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
+depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion_real) # The first time call it two times due to nvisii bug
 
 
-# change object mesh to simulate differences between real object and cad
-new_object_name = "banana2"
-new_object_path = "cad_models/rubber_duck_toy.obj"
-mesh_scale_cad = mesh_scale_real*0.5
-mesh_scale = mesh_scale_cad # change mesh scale to test different scales
+# creat a three numpy array that range from -pi to pi with specified step_size
+step_size = 0.069#0.069
+theta_array = np.array([0.1])#np.arange(-np.pi, np.pi, step_size)
+phi_array = np.arange(-np.pi/2, np.pi/2, step_size)
+psi_array = np.arange(-np.pi, np.pi, step_size)
 
-change_object_mesh(object_name, new_object_name, new_object_path)
-translation_cad = compute_object_center(object_pixels, 0.5, camera_intrinsic)
+# iterate over the three arrays and generate for each the obj_depth_image
+number_of_iteration = 0
+number_of_iterations = len(theta_array) * len(phi_array) * len(psi_array)
+data = []
+for theta in theta_array:
+    for phi in phi_array:
+        for psi in psi_array:
+            quaternion = euler_to_quaternion([theta,phi,psi])
+            # Generate the depth map
+            depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion)
+            # crop object image
+            obj_depth_image = crop_object_image(depth_map,object_pixels)
+            # normalize object depth map
+            obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
+            # compute aspect_ratio
+            aspect_ratio = obj_depth_image_normalized.shape[1] / obj_depth_image_normalized.shape[0]
 
-# cad model point cloud
-pcl_obj, faces = read_obj_file(new_object_path)
-pcl_obj_norm = normalize_point_cloud(translate_centroid_to_origin(pcl_obj*mesh_scale_cad))
-plot_pointcloud(pcl_obj_norm, "pcl_obj_norm")
+            # flipud the depth map
+            obj_depth_image_normalized_flipud = np.flipud(obj_depth_image_normalized)
+            obj_depth_image_normalized_fliplr = np.fliplr(obj_depth_image_normalized)
 
-# ICP - to find a good initial guess
-pcl_object_real = np.array(depth_to_pointcloud(obj_depth_image, camera_intrinsic, object_pixels))
-pcl_object_real_normalized = normalize_point_cloud(translate_centroid_to_origin((pcl_object_real)))
-
-plot_pointcloud(pcl_object_real_normalized, "pcl_object_normalized")
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-xs = [point[0] for point in pcl_obj_norm]
-ys = [point[1] for point in pcl_obj_norm]
-zs = [point[2] for point in pcl_obj_norm]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [point[0] for point in pcl_object_real_normalized]
-ys = [point[1] for point in pcl_object_real_normalized]
-zs = [point[2] for point in pcl_object_real_normalized]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-ax.view_init(elev=20, azim=30)
-plt.savefig("overlap" + '.png')
-
-R_init  = axis_angle_to_rotation_matrix([0,0,1],0)
-transformation, distances, rotated_pcl, indices, mean_error = icp(np.array(pcl_obj_norm),np.array(pcl_object_real_normalized), init_pose=(0,0,0),init_rotation=R_init, no_iterations = 30)
-
-
-axis, theta = rotation_matrix_to_axis_angle(normalize_rotation_matrix(transformation[:3,:3]))
-initial_guess_icp = axis*theta
-
-# Optimization of the orientation 
-
-# Define your list of initial guesses
-initial_guesses = [[0,0,0],
-                   [np.pi/2,np.pi/2,np.pi/2], [np.pi, np.pi, np.pi] ,[3*np.pi/2,3*np.pi/2,3*np.pi/2],
-                   [np.pi/2,np.pi/2,0], [0,np.pi/2,np.pi/2],[np.pi/2,0,np.pi/2],
-                   [np.pi/2, 0, 0], [np.pi, 0, 0], [3*np.pi/2, 0, 0], 
-                   [0, np.pi/2, 0], [0, np.pi, 0], [0, 3*np.pi/2, 0], 
-                   [0, 0, np.pi/2], [0, 0, np.pi], [0, 0, 3*np.pi/2]]
-initial_guesses = [[0,1.57, 0]]
-# Rstart = transformation[:3,:3]
-
-# initial_guesses_tmp = []
-# for guess in initial_guesses:
-#     if np.linalg.norm(guess) != 0:
-#         axis = guess/np.linalg.norm(guess) 
-#     else:
-#         axis = [0,0,1]
-#     theta = np.linalg.norm(guess)
-#     Ratt = axis_angle_to_rotation_matrix(axis,theta) # additional rotation from the Rstart
-#     axis_, theta_ = rotation_matrix_to_axis_angle(normalize_rotation_matrix(Rstart @ Ratt))
-#     initial_guesses_tmp.append(axis_*theta_)
-# initial_guesses = initial_guesses_tmp
-
-
-
-#initial_guesses = [initial_guess_icp]
-
-
-#initial_guesses = [[1,0,0,1,0,0]]
-#initial_guesses = [0,0,0]
-bnds = [(-np.pi, np.pi), (-np.pi/2, np.pi/2), (-np.pi, np.pi)]
-module_constraint = NonlinearConstraint(lambda x: np.linalg.norm(x), 0, 2*np.pi)
-
-def optimize(guess):
-    return minimize(orientation_cost_function, guess,method="Powell", bounds=bnds, options={'ftol': 1e-3,'eps':1e-5})
-    return minimize(orientation_cost_function, guess,method="Powell", tol = 1e-3, bounds=bnds, options={'ftol': 1e-3,'xtol' : 1e-1, 'eps': 1.57,'maxiter': 30,'disp': True})#, constraints=module_constraint)
-    theta = np.linalg.norm(guess)
-    axis = guess[0:3]/theta if theta != 0 else [0,0,1]
-    R_init = axis_angle_to_rotation_matrix(axis,theta)
-    transformation, distances, rotated_pcl, indices, mean_error = icp(np.array(pcl_obj_norm),np.array(pcl_object_real_normalized), init_pose=(0,0,0),init_rotation=R_init, no_iterations = 30)
-    axis, theta = rotation_matrix_to_axis_angle(normalize_rotation_matrix(transformation[:3,:3]))
-    # create a struct result with fields success, x, fun, message
-    result = OptimizeResult()
-    result.success = True
-    result.x = axis*theta
-    result.fun = mean_error
-    result.message = "Optimization terminated successfully."
-    return result
- 
- 
-#test_rotation_optimization([0,0,0,1])    
-result = optimize(initial_guesses)
-# optimize(result.x)
-
-# try evloutional algorithm
-#result = differential_evolution(orientation_cost_function, bounds=bnds, maxiter=10, popsize=10, disp=True, workers=1, updating='deferred')
-
-#Create a ThreadPoolExecutor
-with ThreadPoolExecutor(max_workers=20) as executor:
-    # Use the executor to map the optimize function to the initial guesses
-    results = executor.map(optimize, initial_guesses)
-
-# results now contains the result of the optimization for each initial guess
-result_cost = []
-results_array = []
-for result in results:
-    print("Success:" + str(result.success))
-    print("Result:" + str(result.x))
-    print("Cost:" + str(result.fun))
-    print("Message:" + str(result.message))
-    result_cost.append(result.fun)
-    results_array.append(result.x)
-
-
-# Elaborate result after optimization
-
-# # get pose cad model
-# cont = 0
-# for result in results_array:
-#     orientation2 = result
-#     theta = np.linalg.norm(orientation2)
-#     axis = orientation2/theta
-#     orientation2 = np.concatenate((axis, [theta]))
-#     quaternion2 = axis_angle_to_quaternion(orientation2[0:3],orientation2[3])
-#     quaternion2 = normalize_quaternion(quaternion2)
-
-#     # place it in the virtual world
-#     depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
-#     obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-#     obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)    
-#     cv2.imshow("depth_map2", depth_map2)
-
-
-#     # Retrieve objects point clouds and resample them to get two ordered point clouds
-#     resized_image_real_object, resized_image_cad_model = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-#     cv2.imshow("resized_image_real_object", normalize_depth_map(resized_image_real_object))
-#     cv2.imshow("resized_image_cad_model", normalize_depth_map(resized_image_cad_model))
-#     cv2.waitKey(0)    
-#     print("result",result_cost[cont])
-#     print("result",result)
-#     cont = cont + 1
+            
+            print("theta", theta, "phi", phi, "psi", psi, "aspect_ratio", aspect_ratio)
+            print("image size [byte]", len(object_pixels)*4)
+            print("iteration", number_of_iteration, "out of", number_of_iterations)
+            
+            
+            # Store the data for this iteration
+            data.append({
+                'euler_angles': [theta, phi, psi],
+                'depth_map': obj_depth_image_normalized,
+                'aspect_ratio': aspect_ratio
+            })
+            # cv2.imshow("Object image flipud",obj_depth_image_normalized_flipud)
+            # cv2.imshow("Object image fliplr",obj_depth_image_normalized_fliplr)
+            # cv2.imshow("Object image", obj_depth_image_normalized)
+            # cv2.waitKey(0)
+            
+            number_of_iteration = number_of_iteration + 1
+            
+            
+# Save the data to a file
+import pickle
+with open('bowl.pkl', 'wb') as f:
+    pickle.dump(data, f)
     
-orientation2 = results_array[np.argmin(result_cost)]
-# theta = np.linalg.norm(orientation2)
-# axis = orientation2/theta
-# orientation2 = np.concatenate((axis, [theta]))
-# quaternion2 = axis_angle_to_quaternion(orientation2[0:3],orientation2[3])
-
-# euler
-quaternion2 = euler_to_quaternion(orientation2)
-
-# continuos
-# orientation2 = orientation2.reshape(3,2)
-# orientation2 = continuos_representation(orientation2)
-# quaternion2 = rotation_matrix_to_quaternion(normalize_rotation_matrix(orientation2))
-
-
-quaternion2 = normalize_quaternion(quaternion2)
-
-# place it in the virtual world
-depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
-obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)    
-cv2.imshow("depth_map2", depth_map2)
-
-
-# Retrieve objects point clouds and resample them to get two ordered point clouds
-resized_image_real_object, resized_image_cad_model = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-cv2.imshow("resized_image_real_object", normalize_depth_map(resized_image_real_object))
-cv2.imshow("resized_image_cad_model", normalize_depth_map(resized_image_cad_model))
-
-res_height,res_width = resized_image_real_object.shape
-resampled_depth_map_real = resample_depth_map(depth_map, object_pixels,res_width,res_height)
-resampled_depth_map_cad = resample_depth_map(depth_map2, object_pixels2,res_width,res_height)
-
-point_cloud_real = depth_to_pointcloud_fromlist(resampled_depth_map_real,camera_intrinsic)
-point_cloud_cad = depth_to_pointcloud_fromlist(resampled_depth_map_cad,camera_intrinsic)
-
-point_cloud_real = np.array(point_cloud_real)
-point_cloud_cad = np.array(point_cloud_cad)
-
-mask = ~np.isnan(point_cloud_real) & ~np.isnan(point_cloud_cad)
-mask_matrix = mask.reshape(res_width*res_height,3)
-nan_depth_index = mask_matrix[:,2]
-
-point_cloud_real = point_cloud_real[nan_depth_index]
-point_cloud_cad = point_cloud_cad[nan_depth_index]
-
-plot_pointcloud(point_cloud_real,"point_cloud_real")
-plot_pointcloud(point_cloud_cad,"point_cloud_cad")
-
-# now we have two ordered point clouds, we can run Umeyama and retrieve the relative translation, orientation and scale 
-R, c, t = kabsch_umeyama(point_cloud_real, point_cloud_cad)
-
-print("relative translation", t)
-print("relative scale", c)
-print("relative orientation", R)
-
-point_cloud_cad_transformed = np.array([t + c * R @ b for b in point_cloud_cad])
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-xs = [point[0] for point in point_cloud_real]
-ys = [point[1] for point in point_cloud_real]
-zs = [point[2] for point in point_cloud_real]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [point[0] for point in point_cloud_cad_transformed]
-ys = [point[1] for point in point_cloud_cad_transformed]
-zs = [point[2] for point in point_cloud_cad_transformed]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [point[0] for point in point_cloud_cad]
-ys = [point[1] for point in point_cloud_cad]
-zs = [point[2] for point in point_cloud_cad]
-ax.scatter(xs, ys, zs, c='r'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [translation_cad[0]]
-ys = [translation_cad[1]]
-zs = [translation_cad[2]]
-ax.scatter(xs, ys, zs, c='g'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [translation_real[0]]
-ys = [translation_real[1]]
-zs = [translation_real[2]]
-ax.scatter(xs, ys, zs, c='b'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-# plt.show()
-plt.savefig("Result" + '.png')
-
-#####################################################
-# Compute real object estimated pose wrt camera frame 
-
-R2 = quaternion_to_rotation_matrix(quaternion2)
-
-estimated_p_real = t + c * R @ np.array(translation_cad).T
-estimated_R_real = normalize_rotation_matrix(c * R @ R2)  #???
-estimated_scale_real = mesh_scale_cad*c
-
-print("real object position", estimated_p_real)
-print("real object orientation", estimated_R_real) 
-print("real object scale", estimated_scale_real)
-
-cv2.waitKey(0)
+    
 cv2.destroyAllWindows()
 nvisii.deinitialize()
 

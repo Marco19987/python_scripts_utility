@@ -1,59 +1,10 @@
-import tkinter as tk
-import numpy as np
-from scipy.optimize import minimize, dual_annealing,NonlinearConstraint, least_squares,basinhopping,differential_evolution, OptimizeResult
+import pickle
 import cv2
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+import nvisii 
 import math
-import nvisii
-import time
-import matplotlib
-from concurrent.futures import ThreadPoolExecutor
-import trimesh
-from sklearn.neighbors import NearestNeighbors
-
-def rotation_matrix_to_euler_angles(R):
-    # Check that the rotation matrix is valid
-    assert np.allclose(np.linalg.det(R), 1.0), "Invalid rotation matrix"
-
-    # Extract the rotation angles
-    roll = np.arctan2(R[2, 1], R[2, 2])
-    pitch = np.arctan2(-R[2, 0], np.sqrt(R[2, 1]**2 + R[2, 2]**2))
-    yaw = np.arctan2(R[1, 0], R[0, 0])
-
-    return roll, pitch, yaw
-def evaluate_cost(val):
-    
-    # transform in roll pitch yaw
-    rx = slider1.get()
-    ry = slider2.get()
-    rz = slider3.get()
-    print("rx: ", rx)
-    print("ry: ", ry)
-    print("rz: ", rz)
-    
-    quaternion = euler_to_quaternion([rx,ry,rz], 'ZYZ')
-    quaternion = normalize_quaternion(quaternion)
-    R = quaternion_to_rotation_matrix(quaternion)
-    
-    # use rx ry rz as ZYZ euler angle
-    
-    axis, angle = rotation_matrix_to_axis_angle(R)
-    orientation = axis*angle
-    
-    
-    cost, depth_map2, res1,res2 = orientation_cost_function(orientation)
-    print("cost: ", cost)
-    cv2.imshow("depth_map", depth_map)
-    cv2.imshow("depth_map2", depth_map2)
-    cv2.imshow("Real image", (res1))
-    cv2.imshow("Cad model", (res2))
-    cv2.waitKey(1)
-    
 
 
-
-matplotlib.use('Agg')  # Use a non-interactive backend
 
 def crop_object_image(depth_map,object_pixels):
     
@@ -83,7 +34,7 @@ def quaternion_to_rotation_matrix(q):
     
     Parameters:
     q (tuple or list): A quaternion represented as (w, x, y, z)
-    l
+    
     Returns:
     np.ndarray: A 3x3 rotation matrix
     """
@@ -255,6 +206,7 @@ def rotation_matrix_to_quaternion(R):
     :param R: 3x3 rotation matrix
     :return: quaternion as [x, y, z, w]
     """
+    
     q0 = np.sqrt(1 + R[0, 0] + R[1, 1] + R[2, 2]) / 2
     q1 = (R[2, 1] - R[1, 2]) / (4 * q0)
     q2 = (R[0, 2] - R[2, 0]) / (4 * q0)
@@ -264,11 +216,23 @@ def rotation_matrix_to_quaternion(R):
 
 def orientation_cost_function(orientation):
     
-    theta = np.linalg.norm(orientation)
-    axis = orientation/theta if theta != 0 else [0,0,1]
-    orientation = np.concatenate((axis, [theta if theta != 0 else 2*np.pi]))
+    # theta = np.linalg.norm(orientation)
+    # axis = orientation/theta if theta != 0 else [0,0,1]
+    # orientation = np.concatenate((axis, [theta if theta != 0 else 2*np.pi]))
+    # quaternion2 = normalize_quaternion(axis_angle_to_quaternion(orientation[0:3],orientation[3]))
+    
+    # euler angle
+    quaternion2 = normalize_quaternion(euler_to_quaternion(orientation))
+    
+    # rot mstrix
+    #orientation = orientation.reshape(3,3)
+    #quaternion2 = rotation_matrix_to_quaternion(normalize_rotation_matrix(orientation))
+    
+    # continuos representation
+    # orientation = orientation.reshape(3,2)
+    # orientation = continuos_representation(orientation)
+    # quaternion2 = rotation_matrix_to_quaternion(normalize_rotation_matrix(orientation))
 
-    quaternion2 = normalize_quaternion(axis_angle_to_quaternion(orientation[0:3],orientation[3]))
     
     # change cad orientation
     depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
@@ -288,6 +252,9 @@ def orientation_cost_function(orientation):
     #                                    1*pow((resized_image1_array - resized_image2_array),2))))
     
     cost = 0
+    tmp1 = 0
+    tmp2 = 0
+    tmp3 = 0
     for w in range(w_image):
         for h in range(h_image):
             d1 = resized_image1_array[h][w]
@@ -295,25 +262,40 @@ def orientation_cost_function(orientation):
                         
             if math.isnan(d1) and math.isnan(d2):  
                 cost = cost + 0.5 # is good
+                tmp1 = tmp1 + 0.5
             else:
                 if math.isnan(d2) or math.isnan(d1):
                     cost = cost + 1
+                    tmp2 = tmp2 + 1
                 else:
                     # print("depth_values", d1,d2)
-                    cost = cost + abs(d1-d2)
-    
+                    cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
+                    tmp3 = tmp3 + 0*pow((d1-d2),2) + 1*abs(d1-d2)
+                    
+    print("both nan", tmp1/(h_image*w_image))
+    print("one nan", tmp2/(h_image*w_image))
+    print("both not nan", tmp3/(h_image*w_image))
     
     cost = cost/(h_image*w_image) + 0*abs(aspect_ratio_1-aspect_ratio_2)
     
-    # print("orientation", orientation)
-    #print("cost value", cost)
+
+    print("orientation", orientation)
+    print("cost value", cost)
     print("aspect ratios", aspect_ratio_1, aspect_ratio_2)
     
+    cv2.imshow("depth_map2", depth_map2)
+    cv2.imshow("Real image", resized_image1_array)
+    cv2.imshow("Cad model", resized_image2_array)
+    cv2.waitKey(0)
+
+    return cost
 
 
-    return cost, obj_depth_image2, resized_image1_array, resized_image2_array
 
-def euler_to_quaternion(euler_angles, sequence='XYZ'):
+
+
+
+def euler_to_quaternion(euler_angles, sequence='ZYZ'):
     """
     Convert Euler angles (roll, pitch, yaw) to a quaternion.
     
@@ -467,20 +449,6 @@ def generate_depth_map(object_name, position, quaternion):
     virtual_depth_array = np.flipud(virtual_depth_array)
     
     
-    # # get pixels
-    # object_pixels = []
-    # for h in range(image_height):
-    #         for w in range(image_width):
-    #             if virtual_depth_array[h, w, 0] < max_virtual_depth and virtual_depth_array[h, w, 0] > 0:
-    #                  object_pixels.append((h, w))
-                
-                     
-    #             # fix also error in virtual depth nvisii
-    #             if virtual_depth_array[h, w, 0] > max_virtual_depth or virtual_depth_array[h, w, 0] <= 0:
-    #                 virtual_depth_array[h, w, 0] = np.nan
-    #             else:
-    #                 virtual_depth_array[h, w, 0] = convert_from_uvd(h, w, virtual_depth_array[h, w, 0], focal_length_x, focal_length_y, principal_point_x, principal_point_y)
-
     # Create a mask for the condition
     mask = (virtual_depth_array[:,:,0] < max_virtual_depth) & (virtual_depth_array[:,:,0] > 0)
 
@@ -494,60 +462,8 @@ def generate_depth_map(object_name, position, quaternion):
 
     return virtual_depth_array[:,:,0], object_pixels
 
-def depth_to_pointcloud(depth_map, camera_intrinsics, object_pixels):
-    # generate point cloud from depth_map
-    # px = (X − cx)pz /fx, py = (Y − cy )pz /y
-    
-    height, width = depth_map.shape
-    fx,fy,cx,cy,_,_ = camera_intrinsics
-    
-    pixel_h , pixel_w = map(list, zip(*object_pixels))
-    max_w = max(pixel_w)
-    max_h = max(pixel_h)
-    min_w = min(pixel_w)
-    min_h = min(pixel_h)
-    new_pixel_w = np.linspace(min_w,max_w, width).astype(int)
-    new_pixel_h = np.linspace(min_h,max_h, height).astype(int)
 
 
-    point_cloud = []    
-    for h in range(height):
-        for w in range(width):
-            if(math.isnan(depth_map[h][w])):
-                continue
-            pz = depth_map[h][w]
-            w_ = new_pixel_w[w]
-            h_ = new_pixel_h[h]
-            px = ((w_ - cx)*pz)/fx
-            py = ((h_ - cy)*pz)/fy
-            point_cloud.append((px,py,pz))
-                            
-    return point_cloud
-
-def depth_to_pointcloud_fromlist(depth_map, camera_intrinsics):
-    # generate point cloud from depth_map
-    # px = (X − cx)pz /fx, py = (Y − cy )pz /y
-    fx,fy,cx,cy,width_,height_ = camera_intrinsics
-
-    point_cloud = []    
-    for h,w,dz in depth_map:
-         pz = dz
-         px = ((w - cx)*pz)/fx
-         py = ((h - cy)*pz)/fy
-         point_cloud.append((px,py,pz))
-                
-    return point_cloud
-
-def plot_pointcloud(point_cloud, title):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    xs = [point[0] for point in point_cloud]
-    ys = [point[1] for point in point_cloud]
-    zs = [point[2] for point in point_cloud]
-    ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-    # plt.show()
-    plt.savefig(title + '.png')
-    return ax
     
 def resample_depth_map(depth_map, object_pixels,width,height):
     # this method resamples the object depth map identified by object_pixels width width and height
@@ -571,50 +487,8 @@ def resample_depth_map(depth_map, object_pixels,width,height):
     #print(resampled_depth_map)
     return resampled_depth_map
 
-def kabsch_umeyama(A, B):
-    assert A.shape == B.shape
-    n, m = A.shape
 
-    EA = np.mean(A, axis=0)
-    EB = np.mean(B, axis=0)
-    VarA = np.mean(np.linalg.norm(A - EA, axis=1) ** 2)
 
-    H = ((A - EA).T @ (B - EB)) / n
-    U, D, VT = np.linalg.svd(H)
-    d = np.sign(np.linalg.det(U) * np.linalg.det(VT))
-    S = np.diag([1] * (m - 1) + [d])
-
-    R = U @ S @ VT
-    c = VarA / np.trace(np.diag(D) @ S)
-    t = EA - c * R @ EB
-
-    return R, c, t
-
-def axis_angle_to_quaternion(axis, angle):
-    axis = axis / np.linalg.norm(axis)  # Ensure the axis is a unit vector
-    half_angle = angle / 2
-    w = np.cos(half_angle)
-    x, y, z = np.sin(half_angle) * axis
-    return np.array([w, x, y, z])
-
-def compute_object_center(object_pixels, depth, camera_intrinsics):
-    pixel_y , pixel_x = map(list, zip(*object_pixels))
-    max_x = max(pixel_x)
-    max_y = max(pixel_y)
-    min_x = min(pixel_x)
-    min_y = min(pixel_y)
-    
-    
-    center_x = int((max_x + min_x)/2)
-    center_y = int((max_y + min_y)/2)
-    
-    fx,fy,cx,cy,width_,height_ = camera_intrinsics
-   
-    px = ((center_x - cx)*depth)/fx
-    py = ((center_y - cy)*depth)/fy
-    object_center = [px,py,depth]
-    
-    return object_center
 
 def find_rotation_matrix(A,B):
     n, m = A.shape
@@ -642,148 +516,92 @@ def rotation_matrix_to_axis_angle(R):
     return axis/np.linalg.norm(axis), theta
 
 def normalize_rotation_matrix(R):
-    U, S, VT = np.linalg.svd(R)
-    return U @ VT
+    U_, S_, VT_ = np.linalg.svd(R)
+    return U_ @ VT_
 
-def read_obj_file(file_name):
-    try:
-        # Read the OBJ file
-        mesh = trimesh.load(file_name)
+
+def compute_cost(resized_image1_array, resized_image2_array):
+
+
+    # h_image,w_image = resized_image1_array.shape   
     
-        vertices = np.array(mesh.vertices)
-        faces = np.array(mesh.faces)
+    # cost = 0
+    # for w in range(w_image):
+    #     for h in range(h_image):
+    #         d1 = resized_image1_array[h][w]
+    #         d2 = resized_image2_array[h][w]
+                        
+    #         if math.isnan(d1) and math.isnan(d2):  
+    #             cost = cost + 0.5 # is good
+    #         else:
+    #             if math.isnan(d2) or math.isnan(d1):
+    #                 cost = cost + 1
+    #             else:
+    #                 cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
+                   
+    # cost = cost/(h_image*w_image)
+     # Convert the images to NumPy arrays
+    img1 = np.array(resized_image1_array)
+    img2 = np.array(resized_image2_array)
 
-        return vertices, faces
+    # Create masks for the different conditions
+    both_nan = np.isnan(img1) & np.isnan(img2)
+    one_nan = np.isnan(img1) ^ np.isnan(img2)
+    no_nan = ~(np.isnan(img1) | np.isnan(img2))
 
-    except FileNotFoundError:
-        print("The specified file was not found.")
-        return None, None, None, None
-    except Exception as e:
-        print("An error occurred while reading the file:", e)
-        return None, None, None, None
+    # Calculate the cost for each condition
+    cost_both_nan = np.sum(both_nan) * 0.5
+    cost_one_nan = np.sum(one_nan)
+    cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
 
-def icp(a, b, init_pose=(0,0,0), init_rotation = (1,0,0,0,1,0,0,0,1), no_iterations = 13):
-    '''
-    The Iterative Closest Point method: aligns two point clouds
-    Parameters:
-        a: Nxm numpy array of source mD points
-        b: Nxm numpy array of destination mD point
-        init_pose: (sx,sy,sz) initial pose
-        no_iterations: number of iterations to run
-    Returns:
-        T: final homogeneous transformation that maps a on to b
-        distances: Euclidean distances (errors) of the nearest neighbor
-    '''
+    # Calculate the total cost
+    total_cost = cost_both_nan + cost_one_nan + cost_no_nan
 
-
-    src = np.array(a).T
-    dst = np.array(b).T
-
-    # Initialise overall_T with init_rotation and init_pose
-    overall_T = np.eye(4)
-    overall_T[0:3, 0:3] = np.array(init_rotation).reshape(3,3)
-    overall_T[0:3, 3] = np.array(init_pose)
-
-    #Bring the source cloud to the initial pose
-    src = np.dot(overall_T, np.vstack((src, np.ones((1, src.shape[1])))))
-
-    prev_error = 0
-
-    for i in range(no_iterations):
-        #Find the nearest neighbours in the destination cloud
-        nbrs = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(dst[:3,:].T)
-        distances, indices = nbrs.kneighbors(src[:3,:].T)
-
-        #Compute the transformation between the current source and nearest destination points
-        indices_1D = indices.T.reshape(-1)
-
-        R = find_rotation_matrix(dst[:3,indices_1D].T,src[:3,:].T)
-        T = np.eye(4)
-        T[0:3, 0:3] = (R)
-        T[0:3, 3] = np.array([0,0,0])
-        
-        
-        # Update the overall transformation
-        overall_T = np.dot(T, overall_T)
-
-        #Update the current source
-        src = np.dot(T, src)
-        
-        # T, src_transformed, mean_error = trimesh.registration.procrustes(dst[:3,indices_1D].T,src[:3,:].T)
-        # overall_T = np.dot(T, overall_T)
-        # src = src_transformed
-
-        mean_error = np.mean(distances)
-        print("Mean error:", mean_error)
-        if np.abs(prev_error - mean_error) < 0.000001:
-            break
-        prev_error = mean_error
-    
-
-    #Transform the original source cloud (not the working copy used in the iterations)
-    print("Final transformation:", overall_T)
-    
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    # xs = [point[0] for point in src.T]
-    # ys = [point[1] for point in src.T]
-    # zs = [point[2] for point in src.T]
-    # ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-    # xs = [point[0] for point in dst.T]
-    # ys = [point[1] for point in dst.T]
-    # zs = [point[2] for point in dst.T]
-    # ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-    # # plt.show()
-    # plt.savefig("overlap_" + str(int(random.uniform(0,1000))) + '.png')
-  
-    rot_pcl = src[:3,:]
-    nbrs = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(dst[:3,:].T)
-    distances, indices = nbrs.kneighbors(src[:3,:].T)
-    return overall_T, distances, rot_pcl, indices.T.reshape(-1), np.mean(distances)
-
-
-def translate_centroid_to_origin(pcl):
-    # Convert list to numpy array if it's not
-    if isinstance(pcl, list):
-        pcl = np.array(pcl)
-
-    # Compute the centroid
-    centroid = pcl.mean(axis=0)
-
-    # Translate the point cloud
-    translated_pcl = pcl - centroid
-
-    return translated_pcl
-
-def normalize_point_cloud(pcl):
-    # Convert list to numpy array if it's not
-    if isinstance(pcl, list):
-        pcl = np.array(pcl)
-
-    # # Compute the norm of each point
-    # norms = np.linalg.norm(pcl, axis=1)
-
-    # # Normalize the point cloud
-    # normalized_pcl = pcl / norms[:, np.newaxis]
+    # Normalize the cost
+    cost = total_cost / (img1.size)
     
     
-    # Compute the mean of the point cloud
-    mean = np.mean(pcl, axis=0)
+    return cost
 
-    # Compute the root mean square distance
-    #rmsd = np.sqrt(np.mean(np.sum((pcl - mean)**2, axis=1)))
-    rmsd = np.sqrt(np.mean(pcl**2))
-    # Scale the point cloud by dividing each coordinate by the rmsd
-    normalized_pcl = pcl / rmsd
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Load the data from a file
+with open('banana_viewpoints.pkl', 'rb') as f:
+    data = pickle.load(f)
+
+# Iterate over each element in the data
+# for i, element in enumerate(data):
+#     euler_angles = element['euler_angles']
+#     depth_map = element['depth_map']
+#     aspect_ratio = element['aspect_ratio']
+
+#     # Print the data for this element
+#     print(f'Element {i}:')
+#     print(f'Euler angles: {euler_angles}')
+#     print(f'Aspect ratio: {aspect_ratio}')
+#     print(f'Depth map shape: {depth_map.shape}')
+#     cv2.imshow('Depth map', depth_map)
+#     cv2.waitKey(100)
+#     print()
     
-    rmsd = np.sqrt((pcl ** 2).sum() / len(pcl))
     
-    return normalized_pcl
-
-
-############## MAIN CODE ############################
-
-
+    
 
 # Initialization of intrinsic and extrinsic parameters
 focal_length_x = 610.0  # Focal length in pixels (along X-axis)
@@ -803,15 +621,16 @@ camera_intrinsic = [focal_length_x,focal_length_y,principal_point_x,principal_po
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/banana.obj"  
+file_name = "cad_models/banana2.obj"  
 mesh_scale_real = 0.01 #0.01 banana
 max_virtual_depth = 5 #[m]
 mesh_scale = mesh_scale_real
 
 
 # Pose real object
-translation_real = np.array([0,-0,1]) # position of the object in meters wrt camera
-euler_angles = [3,3.24,0] # radians - roll pitch and yaw
+translation_real = np.array([0,0,0.9]) # position of the object in meters wrt camera
+euler_angles = [2.8,-0.57,0.85] # radians - roll pitch and yaw
+
 import random
 euler_angles = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
 quaternion_real = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
@@ -824,35 +643,67 @@ initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
 # Generate the real depth map
 depth_map, object_pixels = generate_depth_map(object_name,translation_real, quaternion_real) # The first time call it two times due to nvisii bug
 depth_map, object_pixels = generate_depth_map(object_name,translation_real, quaternion_real)
+#cv2.imshow("depth_map", depth_map)
 # crop object image
 obj_depth_image = crop_object_image(depth_map,object_pixels)
 
 # normalize object depth map
 obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
+cv2.imshow("real object", obj_depth_image_normalized)
 
 
-# change object mesh to simulate differences between real object and cad
-new_object_name = "banana2"
-new_object_path = file_name #"cad_models/banana.obj"
-mesh_scale_cad = mesh_scale_real*1
-mesh_scale = mesh_scale_cad # change mesh scale to test different scales
-
-change_object_mesh(object_name, new_object_name, new_object_path)
-translation_cad = compute_object_center(object_pixels, 1, camera_intrinsic)
+    
 
 
-root = tk.Tk()
+# The real aspect ratio
+aspect_ratio_real = obj_depth_image.shape[1] / obj_depth_image.shape[0]
 
-slider1 = tk.Scale(root, from_=-2*np.pi, to=2*np.pi, resolution=0.01, orient=tk.HORIZONTAL, label="Slider 1", length=400, command=evaluate_cost)
-slider1.pack()
+# Sort the data based on the absolute difference with the real aspect ratio
+data.sort(key=lambda x: abs(x['aspect_ratio'] - aspect_ratio_real))
 
-slider2 = tk.Scale(root, from_=-2*np.pi, to=2*np.pi, resolution=0.01, orient=tk.HORIZONTAL, label="Slider 2", length=400, command=evaluate_cost)
-slider2.pack()
+# Number of elements to select
+N = 1300  # Replace with your actual value
 
-slider3 = tk.Scale(root, from_=-2*np.pi, to=2*np.pi, resolution=0.01, orient=tk.HORIZONTAL, label="Slider 3", length=400, command=evaluate_cost)
-slider3.pack()
+# Select the first N elements
+selected_data = data[:N]
 
-button = tk.Button(root, text="evaluate_cost", command=evaluate_cost)
-button.pack()
+# Iterate over each selected element
+index_min = 0
+cost_min = 1000
+for i, element in enumerate(selected_data):
+    euler_angles = element['euler_angles']
+    depth_map = element['depth_map']
+    aspect_ratio = element['aspect_ratio']
 
-root.mainloop()
+    # Print the data for this element
+    print(f'Element {i}:')
+    print(f'Euler angles: {euler_angles}')
+    print(f'Aspect ratio: {aspect_ratio}')
+    print("real aspect ratio", aspect_ratio_real)
+    print(f'Depth map shape: {depth_map.shape}')
+    print()
+    
+    res1, res2 = resize_images_to_same_size(obj_depth_image_normalized, depth_map)
+    cost = compute_cost(res1, res2)
+    if cost <= cost_min:
+        index_min = i
+        cost_min = cost
+        
+    # if cost_min < 0.05:
+    #     break
+        
+    #print("cost", cost)    
+    # cv2.imshow('Depth map', depth_map)
+    # cv2.waitKey(0)
+
+print("index_min", index_min)
+depth_cad = selected_data[index_min]['depth_map']
+
+
+cv2.imshow("real object", obj_depth_image_normalized)
+cv2.imshow("cad object", depth_cad)
+
+cv2.waitKey(0)
+    
+cv2.destroyAllWindows()
+nvisii.deinitialize()
