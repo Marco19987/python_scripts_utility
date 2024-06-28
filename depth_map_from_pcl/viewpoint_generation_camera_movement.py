@@ -8,7 +8,6 @@ import nvisii
 import time
 import matplotlib
 from concurrent.futures import ThreadPoolExecutor
-import trimesh
 from sklearn.neighbors import NearestNeighbors
 
 
@@ -692,9 +691,9 @@ def euler_to_quaternion(euler_angles, sequence='ZYZ'):
 
         return np.array([qw, qx, qy, qz])
 
-def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path):
+def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path, mesh_scale):
         
-    nvisii.initialize(headless= not interactive, verbose=True)
+    nvisii.initialize(headless= interactive, verbose=True)
     nvisii.disable_updates()
     # nvisii.disable_denoiser()
 
@@ -713,9 +712,9 @@ def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path
         )
     )
     camera.get_transform().look_at(
-        at=(0, 0, 0),
-        up=(0, -1, -1),
-        eye=(1, 1, 0)
+        at = (0, 0, 0.9), # at position
+        up = (0, 0, 1),   # up vector
+        eye = (0, 5, 2)   # eye position
     )
     nvisii.set_camera_entity(camera)
 
@@ -725,8 +724,12 @@ def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path
         transform=nvisii.transform.create(object_name),
         material=nvisii.material.create(object_name)
     )
+    obj_mesh.get_transform().set_scale(nvisii.vec3(mesh_scale))
 
-    obj_mesh.get_transform().set_parent(camera.get_transform())
+    
+
+
+    #obj_mesh.get_transform().set_parent(camera.get_transform())
 
     nvisii.sample_pixel_area(
         x_sample_interval=(.5, .5),
@@ -760,31 +763,7 @@ def convert_from_uvd(h, w, d, fx, fy, cx, cy):
     z = d/np.sqrt(1. + px**2 + py**2)     
     return z
 
-def generate_depth_map(object_name, position, quaternion):
-    
-    obj_mesh = nvisii.entity.get(object_name)
-
-    # rotation camera color frame to nvisii frame Rx(pi)
-    x = position[0]
-    y = -position[1]
-    z = -position[2]
-
-    qw = quaternion[0]
-    qx = quaternion[1]
-    qy = quaternion[2]
-    qz = quaternion[3]
-
-
-    p = np.array([x, y, z])
-
-    obj_mesh.get_transform().set_position(p)
-
-    rotation =  nvisii.quat(qw,qx,qy,qz)
-    rotation_flip = nvisii.angleAxis(-nvisii.pi(),nvisii.vec3(1,0,0)) * rotation # additional rotation due camera nvissi frame
-    obj_mesh.get_transform().set_rotation(rotation_flip)
-    
-    obj_mesh.get_transform().set_scale(nvisii.vec3(mesh_scale))
-        
+def generate_depth_map():
     virtual_depth_array = nvisii.render_data(
         width=int(image_width),
         height=int(image_height),
@@ -797,21 +776,6 @@ def generate_depth_map(object_name, position, quaternion):
     virtual_depth_array = np.array(virtual_depth_array).reshape(image_height, image_width, 4)
     virtual_depth_array = np.flipud(virtual_depth_array)
     
-    
-    # # get pixels
-    # object_pixels = []
-    # for h in range(image_height):
-    #         for w in range(image_width):
-    #             if virtual_depth_array[h, w, 0] < max_virtual_depth and virtual_depth_array[h, w, 0] > 0:
-    #                  object_pixels.append((h, w))
-                
-                     
-    #             # fix also error in virtual depth nvisii
-    #             if virtual_depth_array[h, w, 0] > max_virtual_depth or virtual_depth_array[h, w, 0] <= 0:
-    #                 virtual_depth_array[h, w, 0] = np.nan
-    #             else:
-    #                 virtual_depth_array[h, w, 0] = convert_from_uvd(h, w, virtual_depth_array[h, w, 0], focal_length_x, focal_length_y, principal_point_x, principal_point_y)
-
     # Create a mask for the condition
     mask = (virtual_depth_array[:,:,0] < max_virtual_depth) & (virtual_depth_array[:,:,0] > 0)
 
@@ -1107,6 +1071,29 @@ def continuos_representation(A):
     return B
 
 
+def rotateCamera(value):
+    value = value % (2*np.pi)
+    camera = nvisii.entity.get("camera")
+    cam_pos = camera.get_transform().get_position()
+
+    camera.get_transform().look_at(
+        at = (0, 0, 0), # at position
+        up = (0, 0, 1),   # up vector
+        eye = (.5 * math.cos(value * 2 * nvisii.pi()), .5 * math.sin(value * 2 * nvisii.pi()), cam_pos[2])   # eye position
+    )
+
+
+def rotateCameraElevation(value):
+    # print(value)
+    value = value / np.pi
+    camera = nvisii.entity.get("camera")
+    cam_pos = camera.get_transform().get_position()
+    camera.get_transform().look_at(
+        at = (0, 0, 0), # at position
+        up = (0, 0, 1),   # up vector
+        eye = (cam_pos[0], cam_pos[1], 0.1 + 2*0.6*value)   # eye position
+    )
+
 ############## MAIN CODE ############################
 
 
@@ -1129,76 +1116,83 @@ camera_intrinsic = [focal_length_x,focal_length_y,principal_point_x,principal_po
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/banana.obj"  
-mesh_scale_real = 0.01 #0.01 banana
+file_name = "cad_models/bowl.obj"  
+mesh_scale_real = 0.001 #0.01 banana
 max_virtual_depth = 5 #[m]
 mesh_scale = mesh_scale_real
 
 
-# Pose object
-translation = np.array([0,0,1]) # position of the object in meters wrt camera
-euler_angles = [0,0,0] # radians - roll pitch and yaw
-quaternion_real = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
+
 
 # initialize nvisii
 interactive = False
-initialize_nvisii(interactive, camera_intrinsic,object_name, file_name)
+initialize_nvisii(interactive, camera_intrinsic,object_name, file_name, mesh_scale)
 
 
 # Generate the real depth map
-depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion_real) # The first time call it two times due to nvisii bug
+camera_rotation = 0
+camera_elevation = 0
+
+rotateCameraElevation(camera_elevation)
+rotateCamera(camera_rotation)
+
+depth_map, object_pixels = generate_depth_map() # The first time call it two times due to nvisii bug
 
 
-# creat a three numpy array that range from -pi to pi with specified step_size
-step_size = 45*np.pi/180
-theta_array = np.arange(-np.pi, np.pi, step_size)
-phi_array = np.arange(-np.pi, np.pi, step_size)
-psi_array = np.arange(-np.pi, np.pi, step_size)
+# creat two numpy array that range from -pi to pi with specified step_size
+step_size = 5 * np.pi / 180
+camera_rotation_array = np.arange(-np.pi, np.pi, step_size)
+camera_elevation_array = np.arange(-np.pi, np.pi, step_size)
 
 # iterate over the three arrays and generate for each the obj_depth_image
 number_of_iteration = 0
-number_of_iterations = len(theta_array) * len(phi_array) * len(psi_array)
+number_of_iterations =  len(camera_rotation_array) * len(camera_elevation_array)
 data = []
-for theta in theta_array:
-    for phi in phi_array:
-        for psi in psi_array:
-            quaternion = euler_to_quaternion([theta,phi,psi])
-            # Generate the depth map
-            depth_map, object_pixels = generate_depth_map(object_name,translation, quaternion)
-            # crop object image
-            obj_depth_image = crop_object_image(depth_map,object_pixels)
-            # normalize object depth map
-            obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
-            # compute aspect_ratio
-            aspect_ratio = obj_depth_image_normalized.shape[1] / obj_depth_image_normalized.shape[0]
+for camera_rotation in camera_rotation_array:
+    rotateCamera(camera_rotation)
+    for camera_elevation in camera_elevation_array:
+        rotateCameraElevation(camera_elevation)
 
-            # flipud the depth map
-            obj_depth_image_normalized_flipud = np.flipud(obj_depth_image_normalized)
-            obj_depth_image_normalized_fliplr = np.fliplr(obj_depth_image_normalized)
+        # Generate the depth map
+        depth_map, object_pixels = generate_depth_map()
+        # crop object image
+        obj_depth_image = crop_object_image(depth_map,object_pixels)
+        # normalize object depth map
+        obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
+        # compute aspect_ratio
+        aspect_ratio = obj_depth_image_normalized.shape[1] / obj_depth_image_normalized.shape[0]
 
-            
-            print("theta", theta, "phi", phi, "psi", psi, "aspect_ratio", aspect_ratio)
-            print("image size [byte]", len(object_pixels)*4)
-            print("iteration", number_of_iteration, "out of", number_of_iterations)
-            
-            
-            # Store the data for this iteration
-            data.append({
-                'euler_angles': [theta, phi, psi],
-                'depth_map': obj_depth_image_normalized,
-                'aspect_ratio': aspect_ratio
-            })
-            # cv2.imshow("Object image flipud",obj_depth_image_normalized_flipud)
-            # cv2.imshow("Object image fliplr",obj_depth_image_normalized_fliplr)
-            # cv2.imshow("Object image", obj_depth_image_normalized)
-            # cv2.waitKey(0)
-            
-            number_of_iteration = number_of_iteration + 1
-            
+        # flipud the depth map
+        obj_depth_image_normalized_flipud = np.flipud(obj_depth_image_normalized)
+        obj_depth_image_normalized_fliplr = np.fliplr(obj_depth_image_normalized)
+
+        
+        print("aspect_ratio", aspect_ratio)
+        print("camera_rotation", camera_rotation, "camera_elevation", camera_elevation)
+
+        print("image size [byte]", len(object_pixels)*4)
+        print("iteration", number_of_iteration, "out of", number_of_iterations)
+        
+        
+        # Store the data for this iteration
+        theta, phi, psi = camera_rotation, camera_elevation, 0 # to be computed
+        data.append({
+            'euler_angles': [theta, phi, psi],
+            'depth_map': obj_depth_image_normalized,
+            'aspect_ratio': aspect_ratio
+        })
+        
+        # cv2.imshow("Object image flipud",obj_depth_image_normalized_flipud)
+        # cv2.imshow("Object image fliplr",obj_depth_image_normalized_fliplr)
+        cv2.imshow("Object image", obj_depth_image_normalized)
+        cv2.waitKey(0)
+        
+        number_of_iteration = number_of_iteration + 1
+        
             
 # Save the data to a file
 import pickle
-with open('banana_viewpoints_45.pkl', 'wb') as f:
+with open('bowl.pkl', 'wb') as f:
     pickle.dump(data, f)
     
     
