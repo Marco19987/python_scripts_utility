@@ -1,3 +1,8 @@
+import matplotlib
+matplotlib.use('tkagg')
+import matplotlib.pyplot as plt
+
+
 import pickle
 import cv2
 import numpy as np
@@ -5,10 +10,7 @@ import nvisii
 import math
 from scipy.optimize import minimize, NonlinearConstraint
 from concurrent.futures import ThreadPoolExecutor
-import matplotlib.pyplot as plt
-import matplotlib
 
-matplotlib.use('Agg')  # Use a non-interactive backend
 
 
 def crop_object_image(depth_map,object_pixels):
@@ -529,42 +531,42 @@ def normalize_rotation_matrix(R):
 def compute_cost(resized_image1_array, resized_image2_array):
 
 
-    # h_image,w_image = resized_image1_array.shape   
+    h_image,w_image = resized_image1_array.shape   
     
-    # cost = 0
-    # for w in range(w_image):
-    #     for h in range(h_image):
-    #         d1 = resized_image1_array[h][w]
-    #         d2 = resized_image2_array[h][w]
+    cost = 0
+    for w in range(w_image):
+        for h in range(h_image):
+            d1 = resized_image1_array[h][w]
+            d2 = resized_image2_array[h][w]
                         
-    #         if math.isnan(d1) and math.isnan(d2):  
-    #             cost = cost + 0.5 # is good
-    #         else:
-    #             if math.isnan(d2) or math.isnan(d1):
-    #                 cost = cost + 1
-    #             else:
-    #                 cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
+            if math.isnan(d1) and math.isnan(d2):  
+                cost = cost + 0.5 # is good
+            else:
+                if math.isnan(d2) or math.isnan(d1):
+                    cost = cost + 1
+                else:
+                    cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
                    
-    # cost = cost/(h_image*w_image)
+    cost = cost/(h_image*w_image)
      # Convert the images to NumPy arrays
-    img1 = np.array(resized_image1_array)
-    img2 = np.array(resized_image2_array)
+    # img1 = np.array(resized_image1_array)
+    # img2 = np.array(resized_image2_array)
 
-    # Create masks for the different conditions
-    both_nan = np.isnan(img1) & np.isnan(img2)
-    one_nan = np.isnan(img1) ^ np.isnan(img2)
-    no_nan = ~(np.isnan(img1) | np.isnan(img2))
+    # # Create masks for the different conditions
+    # both_nan = np.isnan(img1) & np.isnan(img2)
+    # one_nan = np.isnan(img1) ^ np.isnan(img2)
+    # no_nan = ~(np.isnan(img1) | np.isnan(img2))
 
-    # Calculate the cost for each condition
-    cost_both_nan = np.sum(both_nan) * 0.5
-    cost_one_nan = np.sum(one_nan)
-    cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
+    # # Calculate the cost for each condition
+    # cost_both_nan = np.sum(both_nan) * 0.5
+    # cost_one_nan = np.sum(one_nan)
+    # cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
 
-    # Calculate the total cost
-    total_cost = cost_both_nan + cost_one_nan + cost_no_nan
+    # # Calculate the total cost
+    # total_cost = cost_both_nan + cost_one_nan + cost_no_nan
 
-    # Normalize the cost
-    cost = total_cost / (img1.size)
+    # # Normalize the cost
+    # cost = total_cost / (img1.size)
     
     
     return cost
@@ -716,8 +718,8 @@ mesh_scale = mesh_scale_real
 translation_real = np.array([0,0,1]) # position of the object in meters wrt camera
 euler_angles = [0.5,0.8,0.3] # radians - roll pitch and yaw
 
-import random
-euler_angles = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
+# import random
+# euler_angles = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
 quaternion_real = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
 
 # initialize nvisii
@@ -748,7 +750,7 @@ aspect_ratio_real = obj_depth_image.shape[1] / obj_depth_image.shape[0]
 data.sort(key=lambda x: abs(x['aspect_ratio'] - aspect_ratio_real))
 
 # Number of elements to select
-N = 511  
+N = 5000
 
 # Select the first N elements
 selected_data = data[:N]
@@ -756,6 +758,7 @@ selected_data = data[:N]
 # Iterate over each selected element
 index_min = 0
 cost_min = 1000
+cost_list = []
 for i, element in enumerate(selected_data):
     euler_angles = element['euler_angles']
     depth_map_cad = element['depth_map']
@@ -763,6 +766,7 @@ for i, element in enumerate(selected_data):
     
     res1, res2 = resize_images_to_same_size(obj_depth_image_normalized, depth_map_cad)
     cost = compute_cost(res1, res2)
+    cost_list.append(cost)
     if cost <= cost_min:
         index_min = i
         cost_min = cost
@@ -783,6 +787,7 @@ for i, element in enumerate(selected_data):
     # cv2.waitKey(0)
 
 print("index_min", index_min)
+print("cost_min", cost_min) 
 depth_cad = selected_data[index_min]['depth_map']
 
 
@@ -795,141 +800,72 @@ orientation2 = selected_data[index_min]['euler_angles']
 print("initial guess", orientation2)
 
 
-#################### OPTIMIZATION ########################################################################
-
-# load model object
-new_object_name = "banana2"
-new_object_path = "cad_models/rubber_duck_toy_1k.gltf"
-mesh_scale_cad = mesh_scale_real*0.8
-mesh_scale = mesh_scale_cad # change mesh scale to test different scales
-
-change_object_mesh(object_name, new_object_name, new_object_path)
-translation_cad = compute_object_center(object_pixels, 1, camera_intrinsic)
-
-Rinit = quaternion_to_rotation_matrix(euler_to_quaternion(orientation2))
-Rinit = normalize_rotation_matrix(Rinit)
+#################### plot cost function ########################################################################
+# plot the cost function by varying the orientation
+plt.plot(cost_list)
+plt.xlabel('Orientation')
+plt.ylabel('Cost')
+plt.title('Cost function')
+plt.savefig('cost_function.png')
+plt.show()
 
 
-initial_guesses = [[orientation2]]#[[0,1.57, 0]]
-
-bnds = [(-np.pi, np.pi), (-np.pi, np.pi), (-np.pi, np.pi)]
-def optimize(guess):
-    return minimize(orientation_cost_function, guess,method="SLSQP", bounds=bnds, options={'ftol': 1e-2,'eps':1e-1})
- 
- 
-result = optimize(initial_guesses)
 
 
-#Create a ThreadPoolExecutor
-# with ThreadPoolExecutor(max_workers=20) as executor:
-#     # Use the executor to map the optimize function to the initial guesses
-#     results = executor.map(optimize, initial_guesses)
+from scipy.interpolate import griddata
 
-# # results now contains the result of the optimization for each initial guess
-# result_cost = []
-# results_array = []
-# for result in results:
-#     print("Success:" + str(result.success))
-#     print("Result:" + str(result.x))
-#     print("Cost:" + str(result.fun))
-#     print("Message:" + str(result.message))
-#     result_cost.append(result.fun)
-#     results_array.append(result.x)
+# Create a figure with 3 subplots (3D plots)
+fig = plt.figure(figsize=(18, 6))
+
+# Prepare data for interpolation
+euler_angles = np.array([element['euler_angles'] for element in selected_data])
+costs = np.array([compute_cost(resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[0],
+                               resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[1])
+                  for element in selected_data])
+
+# Define meshgrid resolution
+grid_resolution = 100j
+
+# Subplot 1: Fix the first orientation, vary the other two
+ax1 = fig.add_subplot(131, projection='3d')
+grid_x1, grid_y1 = np.mgrid[min(euler_angles[:,1]):max(euler_angles[:,1]):grid_resolution, min(euler_angles[:,2]):max(euler_angles[:,2]):grid_resolution]
+grid_z1 = griddata(euler_angles[:,1:3], costs, (grid_x1, grid_y1), method='cubic')
+ax1.plot_surface(grid_x1, grid_y1, grid_z1, cmap='viridis', edgecolor='none')
+ax1.set_title('Fixed Orientation 1')
+ax1.set_xlabel('Orientation 2')
+ax1.set_ylabel('Orientation 3')
+ax1.set_zlabel('Cost')
+
+# Subplot 2: Fix the second orientation, vary the others
+ax2 = fig.add_subplot(132, projection='3d')
+grid_x2, grid_y2 = np.mgrid[min(euler_angles[:,0]):max(euler_angles[:,0]):grid_resolution, min(euler_angles[:,2]):max(euler_angles[:,2]):grid_resolution]
+grid_z2 = griddata(euler_angles[:,[0,2]], costs, (grid_x2, grid_y2), method='cubic')
+ax2.plot_surface(grid_x2, grid_y2, grid_z2, cmap='viridis', edgecolor='none')
+ax2.set_title('Fixed Orientation 2')
+ax2.set_xlabel('Orientation 1')
+ax2.set_ylabel('Orientation 3')
+ax2.set_zlabel('Cost')
+
+# Subplot 3: Fix the third orientation, vary the others
+ax3 = fig.add_subplot(133, projection='3d')
+grid_x3, grid_y3 = np.mgrid[min(euler_angles[:,0]):max(euler_angles[:,0]):grid_resolution, min(euler_angles[:,1]):max(euler_angles[:,1]):grid_resolution]
+grid_z3 = griddata(euler_angles[:,0:2], costs, (grid_x3, grid_y3), method='cubic')
+ax3.plot_surface(grid_x3, grid_y3, grid_z3, cmap='viridis', edgecolor='none')
+ax3.set_title('Fixed Orientation 3')
+ax3.set_xlabel('Orientation 1')
+ax3.set_ylabel('Orientation 2')
+ax3.set_zlabel('Cost')
+
+# in each subplot, plot the initial guess
+ax1.scatter(orientation2[1], orientation2[2], cost_min, color='red', s=100)
+ax2.scatter(orientation2[0], orientation2[2], cost_min, color='red', s=100)
+ax3.scatter(orientation2[0], orientation2[1], cost_min, color='red', s=100)
+
+plt.tight_layout()  # Adjust subplots to fit into the figure area.
+plt.savefig('cost_function_3d_continuous_all.png')
+plt.show()
 
 
-################### RESULT ELABORATION ####################################################################
-    
-orientation2 = result.x#results_array[np.argmin(result_cost)]
 
-# euler
-quaternion2 = euler_to_quaternion(orientation2)
-
-# continuos
-# orientation2 = orientation2.reshape(3,2)
-# orientation2 = continuos_representation(orientation2)
-# quaternion2 = rotation_matrix_to_quaternion(normalize_rotation_matrix(orientation2))
-
-quaternion2 = normalize_quaternion(quaternion2)
-
-# place it in the virtual world
-depth_map2, object_pixels2 = generate_depth_map(object_name,translation_cad, quaternion2)
-obj_depth_image2 = crop_object_image(depth_map2,object_pixels2)
-obj_depth_image2_normalized = normalize_depth_map(obj_depth_image2)    
-cv2.imshow("depth_map2", depth_map2)
-
-
-# Retrieve objects point clouds and resample them to get two ordered point clouds
-resized_image_real_object, resized_image_cad_model = resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-cv2.imshow("resized_image_real_object", normalize_depth_map(resized_image_real_object))
-cv2.imshow("resized_image_cad_model", normalize_depth_map(resized_image_cad_model))
-
-res_height,res_width = resized_image_real_object.shape
-resampled_depth_map_real = resample_depth_map(depth_map, object_pixels,res_width,res_height)
-resampled_depth_map_cad = resample_depth_map(depth_map2, object_pixels2,res_width,res_height)
-
-point_cloud_real = depth_to_pointcloud_fromlist(resampled_depth_map_real,camera_intrinsic)
-point_cloud_cad = depth_to_pointcloud_fromlist(resampled_depth_map_cad,camera_intrinsic)
-
-point_cloud_real = np.array(point_cloud_real)
-point_cloud_cad = np.array(point_cloud_cad)
-
-mask = ~np.isnan(point_cloud_real) & ~np.isnan(point_cloud_cad)
-mask_matrix = mask.reshape(res_width*res_height,3)
-nan_depth_index = mask_matrix[:,2]
-
-point_cloud_real = point_cloud_real[nan_depth_index]
-point_cloud_cad = point_cloud_cad[nan_depth_index]
-
-plot_pointcloud(point_cloud_real,"point_cloud_real")
-plot_pointcloud(point_cloud_cad,"point_cloud_cad")
-
-# now we have two ordered point clouds, we can run Umeyama and retrieve the relative translation, orientation and scale 
-R, c, t = kabsch_umeyama(point_cloud_real, point_cloud_cad)
-
-print("relative translation", t)
-print("relative scale", c)
-print("relative orientation", R)
-
-point_cloud_cad_transformed = np.array([t + c * R @ b for b in point_cloud_cad])
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-xs = [point[0] for point in point_cloud_real]
-ys = [point[1] for point in point_cloud_real]
-zs = [point[2] for point in point_cloud_real]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [point[0] for point in point_cloud_cad_transformed]
-ys = [point[1] for point in point_cloud_cad_transformed]
-zs = [point[2] for point in point_cloud_cad_transformed]
-ax.scatter(xs, ys, zs), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [point[0] for point in point_cloud_cad]
-ys = [point[1] for point in point_cloud_cad]
-zs = [point[2] for point in point_cloud_cad]
-ax.scatter(xs, ys, zs, c='r'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [translation_cad[0]]
-ys = [translation_cad[1]]
-zs = [translation_cad[2]]
-ax.scatter(xs, ys, zs, c='g'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-xs = [translation_real[0]]
-ys = [translation_real[1]]
-zs = [translation_real[2]]
-ax.scatter(xs, ys, zs, c='b'), ax.set_xlabel('X'), ax.set_ylabel('Y'), ax.set_zlabel('Z')
-# plt.show()
-plt.savefig("Result" + '.png')
-
-#####################################################
-# Compute real object estimated pose wrt camera frame 
-
-R2 = quaternion_to_rotation_matrix(quaternion2)
-
-estimated_p_real = t + c * R @ np.array(translation_cad).T
-estimated_R_real = normalize_rotation_matrix(c * R @ R2)  #???
-estimated_scale_real = mesh_scale_cad*c
-
-print("real object position", estimated_p_real)
-print("real object orientation", estimated_R_real) 
-print("real object scale", estimated_scale_real)
-
-cv2.waitKey(0)
 cv2.destroyAllWindows()
 nvisii.deinitialize()

@@ -1129,8 +1129,8 @@ camera_intrinsic = [focal_length_x,focal_length_y,principal_point_x,principal_po
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/banana.obj"  
-mesh_scale_real = 0.01 #0.01 banana
+file_name = "cad_models/rubber_duck_toy_1k.gltf"  
+mesh_scale_real = 1 #0.01 banana
 max_virtual_depth = 5 #[m]
 mesh_scale = mesh_scale_real
 
@@ -1198,7 +1198,7 @@ for theta in theta_array:
             
 # Save the data to a file
 import pickle
-with open('banana_viewpoints_45.pkl', 'wb') as f:
+with open('rubber_duck_viewpoints_45.pkl', 'wb') as f:
     pickle.dump(data, f)
     
     
