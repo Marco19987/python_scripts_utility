@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('tkagg')
+import matplotlib.pyplot as plt
 import pickle
 import cv2
 import numpy as np
@@ -5,10 +8,7 @@ import nvisii
 import math
 from scipy.optimize import minimize, NonlinearConstraint
 from concurrent.futures import ThreadPoolExecutor
-import matplotlib.pyplot as plt
-import matplotlib
 
-matplotlib.use('Agg')  # Use a non-interactive backend
 
 
 def crop_object_image(depth_map,object_pixels):
@@ -529,42 +529,42 @@ def normalize_rotation_matrix(R):
 def compute_cost(resized_image1_array, resized_image2_array):
 
 
-    # h_image,w_image = resized_image1_array.shape   
+    h_image,w_image = resized_image1_array.shape   
     
-    # cost = 0
-    # for w in range(w_image):
-    #     for h in range(h_image):
-    #         d1 = resized_image1_array[h][w]
-    #         d2 = resized_image2_array[h][w]
+    cost = 0
+    for w in range(w_image):
+        for h in range(h_image):
+            d1 = resized_image1_array[h][w]
+            d2 = resized_image2_array[h][w]
                         
-    #         if math.isnan(d1) and math.isnan(d2):  
-    #             cost = cost + 0.5 # is good
-    #         else:
-    #             if math.isnan(d2) or math.isnan(d1):
-    #                 cost = cost + 1
-    #             else:
-    #                 cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
+            if math.isnan(d1) and math.isnan(d2):  
+                cost = cost + 0.5 # is good
+            else:
+                if math.isnan(d2) or math.isnan(d1):
+                    cost = cost + 1
+                else:
+                    cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
                    
-    # cost = cost/(h_image*w_image)
+    cost = cost/(h_image*w_image)
      # Convert the images to NumPy arrays
-    img1 = np.array(resized_image1_array)
-    img2 = np.array(resized_image2_array)
+    # img1 = np.array(resized_image1_array)
+    # img2 = np.array(resized_image2_array)
 
-    # Create masks for the different conditions
-    both_nan = np.isnan(img1) & np.isnan(img2)
-    one_nan = np.isnan(img1) ^ np.isnan(img2)
-    no_nan = ~(np.isnan(img1) | np.isnan(img2))
+    # # Create masks for the different conditions
+    # both_nan = np.isnan(img1) & np.isnan(img2)
+    # one_nan = np.isnan(img1) ^ np.isnan(img2)
+    # no_nan = ~(np.isnan(img1) | np.isnan(img2))
 
-    # Calculate the cost for each condition
-    cost_both_nan = np.sum(both_nan) * 0.5
-    cost_one_nan = np.sum(one_nan)
-    cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
+    # # Calculate the cost for each condition
+    # cost_both_nan = np.sum(both_nan) * 0.5
+    # cost_one_nan = np.sum(one_nan)
+    # cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
 
-    # Calculate the total cost
-    total_cost = cost_both_nan + cost_one_nan + cost_no_nan
+    # # Calculate the total cost
+    # total_cost = cost_both_nan + cost_one_nan + cost_no_nan
 
-    # Normalize the cost
-    cost = total_cost / (img1.size)
+    # # Normalize the cost
+    # cost = total_cost / (img1.size)
     
     
     return cost
@@ -678,7 +678,7 @@ camera_intrinsic = [focal_length_x,focal_length_y,principal_point_x,principal_po
 
 
 # Load the pre-generated viewpoints from the file
-viewpoint_file = 'rubber_duck_viewpoints_45.pkl'
+viewpoint_file = 'rubber_duck_viewpoints_20.pkl'
 visualize_viwepoints = False
 
 with open(viewpoint_file, 'rb') as f:
@@ -745,10 +745,10 @@ obj_depth_image_normalized = normalize_depth_map(obj_depth_image)
 aspect_ratio_real = obj_depth_image.shape[1] / obj_depth_image.shape[0]
 
 # Sort the data based on the absolute difference with the real aspect ratio
-data.sort(key=lambda x: abs(x['aspect_ratio'] - aspect_ratio_real))
+#data.sort(key=lambda x: abs(x['aspect_ratio'] - aspect_ratio_real))
 
 # Number of elements to select
-N = 511  
+N = 5000  
 
 # Select the first N elements
 selected_data = data[:N]
@@ -794,6 +794,61 @@ cv2.destroyAllWindows()
 orientation2 = selected_data[index_min]['euler_angles']
 print("initial guess", orientation2)
 
+
+#################### plot cost function ########################################################################
+
+from scipy.interpolate import griddata
+
+# Create a figure with 3 subplots (3D plots)
+fig = plt.figure(figsize=(18, 6))
+
+# Prepare data for interpolation
+euler_angles = np.array([element['euler_angles'] for element in selected_data])
+costs = np.array([compute_cost(resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[0],
+                               resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[1])
+                  for element in selected_data])
+
+# Define meshgrid resolution
+grid_resolution = 100j
+
+# Subplot 1: Fix the first orientation, vary the other two
+ax1 = fig.add_subplot(131, projection='3d')
+grid_x1, grid_y1 = np.mgrid[min(euler_angles[:,1]):max(euler_angles[:,1]):grid_resolution, min(euler_angles[:,2]):max(euler_angles[:,2]):grid_resolution]
+grid_z1 = griddata(euler_angles[:,1:3], costs, (grid_x1, grid_y1), method='cubic')
+ax1.plot_surface(grid_x1, grid_y1, grid_z1, cmap='viridis', edgecolor='none')
+ax1.set_title('Fixed Orientation 1')
+ax1.set_xlabel('Orientation 2')
+ax1.set_ylabel('Orientation 3')
+ax1.set_zlabel('Cost')
+
+# Subplot 2: Fix the second orientation, vary the others
+ax2 = fig.add_subplot(132, projection='3d')
+grid_x2, grid_y2 = np.mgrid[min(euler_angles[:,0]):max(euler_angles[:,0]):grid_resolution, min(euler_angles[:,2]):max(euler_angles[:,2]):grid_resolution]
+grid_z2 = griddata(euler_angles[:,[0,2]], costs, (grid_x2, grid_y2), method='cubic')
+ax2.plot_surface(grid_x2, grid_y2, grid_z2, cmap='viridis', edgecolor='none')
+ax2.set_title('Fixed Orientation 2')
+ax2.set_xlabel('Orientation 1')
+ax2.set_ylabel('Orientation 3')
+ax2.set_zlabel('Cost')
+
+# Subplot 3: Fix the third orientation, vary the others
+ax3 = fig.add_subplot(133, projection='3d')
+grid_x3, grid_y3 = np.mgrid[min(euler_angles[:,0]):max(euler_angles[:,0]):grid_resolution, min(euler_angles[:,1]):max(euler_angles[:,1]):grid_resolution]
+grid_z3 = griddata(euler_angles[:,0:2], costs, (grid_x3, grid_y3), method='cubic')
+ax3.plot_surface(grid_x3, grid_y3, grid_z3, cmap='viridis', edgecolor='none')
+ax3.set_title('Fixed Orientation 3')
+ax3.set_xlabel('Orientation 1')
+ax3.set_ylabel('Orientation 2')
+ax3.set_zlabel('Cost')
+
+# in each subplot, plot the initial guess
+ax1.scatter(orientation2[1], orientation2[2], cost_min, color='red', s=100)
+ax2.scatter(orientation2[0], orientation2[2], cost_min, color='red', s=100)
+ax3.scatter(orientation2[0], orientation2[1], cost_min, color='red', s=100)
+
+plt.tight_layout()  # Adjust subplots to fit into the figure area.
+plt.savefig('cost_function_3d_continuous_all.png')
+plt.show()
 
 #################### OPTIMIZATION ########################################################################
 

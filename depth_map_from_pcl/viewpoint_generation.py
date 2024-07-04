@@ -1129,14 +1129,14 @@ camera_intrinsic = [focal_length_x,focal_length_y,principal_point_x,principal_po
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/rubber_duck_toy_1k.gltf"  
-mesh_scale_real = 1 #0.01 banana
+file_name = "cad_models/connectorMO6.obj"  
+mesh_scale_real = 0.01 #0.01 banana
 max_virtual_depth = 5 #[m]
 mesh_scale = mesh_scale_real
 
 
 # Pose object
-translation = np.array([0,0,1]) # position of the object in meters wrt camera
+translation = np.array([0,0,0.2]) # position of the object in meters wrt camera
 euler_angles = [0,0,0] # radians - roll pitch and yaw
 quaternion_real = euler_to_quaternion(euler_angles)#[0,0.5,0.5,0]  
 
@@ -1173,8 +1173,8 @@ for theta in theta_array:
             aspect_ratio = obj_depth_image_normalized.shape[1] / obj_depth_image_normalized.shape[0]
 
             # flipud the depth map
-            obj_depth_image_normalized_flipud = np.flipud(obj_depth_image_normalized)
-            obj_depth_image_normalized_fliplr = np.fliplr(obj_depth_image_normalized)
+            # obj_depth_image_normalized_flipud = np.flipud(obj_depth_image_normalized)
+            # obj_depth_image_normalized_fliplr = np.fliplr(obj_depth_image_normalized)
 
             
             print("theta", theta, "phi", phi, "psi", psi, "aspect_ratio", aspect_ratio)
@@ -1190,15 +1190,15 @@ for theta in theta_array:
             })
             # cv2.imshow("Object image flipud",obj_depth_image_normalized_flipud)
             # cv2.imshow("Object image fliplr",obj_depth_image_normalized_fliplr)
-            # cv2.imshow("Object image", obj_depth_image_normalized)
-            # cv2.waitKey(0)
+            #cv2.imshow("Object image", depth_map)
+            #cv2.waitKey(0)
             
             number_of_iteration = number_of_iteration + 1
             
             
 # Save the data to a file
 import pickle
-with open('rubber_duck_viewpoints_45.pkl', 'wb') as f:
+with open('connectorMO6_viewpoints_45.pkl', 'wb') as f:
     pickle.dump(data, f)
     
     
