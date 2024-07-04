@@ -28,6 +28,8 @@ def generate_depth_map(object_name, position, quaternion, mesh_scale, camera_ins
     obj_mesh.get_transform().set_position(p)
 
     rotation = nvisii.quat(qw,qx,qy,qz)
+    #rotation = nvisii.angleAxis(qz,nvisii.vec3(qw,qx,qy))
+
     rotation_flip = nvisii.angleAxis(-nvisii.pi(),nvisii.vec3(1,0,0)) * rotation # additional rotation due camera nvissi frame
     obj_mesh.get_transform().set_rotation(rotation_flip)
     
@@ -277,3 +279,16 @@ def crop_object_image(depth_map,object_pixels):
     obj_image[h_indices, w_indices] = depth_map[pixel_h[:, None], pixel_w]
     
     return obj_image
+
+
+def normalize_depth_map(depth_map):
+    
+    max_value = np.nanmax(depth_map)
+    min_value = np.nanmin(depth_map)
+    
+    range_value = max_value - min_value
+    
+    # Normalize the matrix
+    normalized_depth_map = (depth_map - min_value)/ range_value
+    
+    return normalized_depth_map

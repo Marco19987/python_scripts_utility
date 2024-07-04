@@ -35,18 +35,6 @@ def normalize_quaternion(q):
     norm = np.sqrt(w**2 + x**2 + y**2 + z**2)
     return w / norm, x / norm, y / norm, z / norm
 
-def normalize_depth_map(depth_map):
-    
-    max_value = np.nanmax(depth_map)
-    min_value = np.nanmin(depth_map)
-    
-    range_value = max_value - min_value
-    
-    # Normalize the matrix
-    normalized_depth_map = (depth_map - min_value)/ range_value
-    
-    return normalized_depth_map
-
 def rotation_matrix_to_quaternion(R):
     """
     Convert a rotation matrix to a quaternion.
@@ -239,5 +227,23 @@ def read_obj_file(file_name):
         print("An error occurred while reading the file:", e)
         return None, None, None, None
     
+def axis_angle_viewpoint(phi, theta, psi):
+    # method to generate the corresponding orientatin in the compact
+    # axis angle representations from the three angles phi, theta, psi
+    # phi is the angle of the versor in the xy plane
+    # theta is the angle of the versor with the z axis
+    # psi is the angle of rotation around the versor
+    rx = np.cos(theta) * np.cos(phi) 
+    ry = np.cos(theta) * np.sin(phi)
+    rz = np.sin(theta)
+    rpsi = np.array([rx, ry, rz]) * psi
+    return rpsi
 
+def axis_angle_from_vector(rtheta):
+    # from the vector r*theta extract the axis r and the angle theta
+    theta = np.linalg.norm(rtheta)
+    axis = rtheta/theta if theta != 0 else [0,0,1]
+    return axis, theta
+
+    
 

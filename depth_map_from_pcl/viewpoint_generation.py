@@ -3,7 +3,10 @@ import cv2
 import nvisii
 import geometric_helper as geometric_helper
 import image_helper as image_helper
-import nvisii_utils as nvisii_utils
+import nvisii_helper as nvisii_helper
+
+# File to save the viewpoint data
+viewpoint_filename = "connectorMO6_viewpoints_45.pkl"
 
 # Initialization of intrinsic and extrinsic parameters
 focal_length_x = 610.0  # Focal length in pixels (along X-axis)
@@ -31,7 +34,7 @@ quaternion_real = geometric_helper.euler_to_quaternion(euler_angles)
 
 # initialize nvisii
 interactive = False
-nvisii_utils.initialize_nvisii(interactive, camera_intrinsics,object_name, file_name)
+nvisii_helper.initialize_nvisii(interactive, camera_intrinsics,object_name, file_name)
 
 
 # Generate the real depth map
@@ -39,57 +42,56 @@ depth_map, object_pixels = image_helper.generate_depth_map(object_name,translati
 
 
 # creat a three numpy array that range from -pi to pi with specified step_size
-step_size = 45*np.pi/180
+step_size = 20*np.pi/180
+phi_array = np.arange(0, 2*np.pi, step_size)
 theta_array = np.arange(-np.pi, np.pi, step_size)
-phi_array = np.arange(-np.pi, np.pi, step_size)
-psi_array = np.arange(-np.pi, np.pi, step_size)
+psi_array = np.arange(2*np.pi, 4*np.pi,  step_size)
 
 # iterate over the three arrays and generate for each the obj_depth_image
 number_of_iteration = 0
 number_of_iterations = len(theta_array) * len(phi_array) * len(psi_array)
 data = []
-for theta in theta_array:
-    for phi in phi_array:
+import pdb
+
+for phi in phi_array:
+    for theta in theta_array:
         for psi in psi_array:
-            quaternion = geometric_helper.euler_to_quaternion([theta,phi,psi])
+            #quaternion = geometric_helper.euler_to_quaternion([phi,theta,psi])
+            axis, angle = geometric_helper.axis_angle_from_vector(geometric_helper.axis_angle_viewpoint(phi,theta,6.28 + 0*psi))
+            #breakpoint()
+            quaternion = geometric_helper.axis_angle_to_quaternion(axis, angle)
+            #quaternion = np.concatenate((axis, [angle]))
             # Generate the depth map
             depth_map, object_pixels = image_helper.generate_depth_map(object_name,translation, quaternion, mesh_scale, camera_intrinsics, max_virtual_depth)
             # crop object image
             obj_depth_image = image_helper.crop_object_image(depth_map,object_pixels)
             # normalize object depth map
-            obj_depth_image_normalized = geometric_helper.normalize_depth_map(obj_depth_image)
+            obj_depth_image_normalized = image_helper.normalize_depth_map(obj_depth_image)
             # compute aspect_ratio
             aspect_ratio = obj_depth_image_normalized.shape[1] / obj_depth_image_normalized.shape[0]
-
-            # flipud the depth map
-            # obj_depth_image_normalized_flipud = np.flipud(obj_depth_image_normalized)
-            # obj_depth_image_normalized_fliplr = np.fliplr(obj_depth_image_normalized)
-
             
-            print("theta", theta, "phi", phi, "psi", psi, "aspect_ratio", aspect_ratio)
+            print("phi", phi, "theta", theta, "psi", psi, "aspect_ratio", aspect_ratio)
             print("image size [byte]", len(object_pixels)*4)
             print("iteration", number_of_iteration, "out of", number_of_iterations)
             
             
             # Store the data for this iteration
             data.append({
-                'euler_angles': [theta, phi, psi],
+                'orientation': [phi, theta, psi],
                 'depth_map': obj_depth_image_normalized,
                 'aspect_ratio': aspect_ratio
             })
-            # cv2.imshow("Object image flipud",obj_depth_image_normalized_flipud)
-            # cv2.imshow("Object image fliplr",obj_depth_image_normalized_fliplr)
-            #cv2.imshow("Object image", depth_map)
-            #cv2.waitKey(0)
             
             number_of_iteration = number_of_iteration + 1
             
+            cv2.imshow("Object image", obj_depth_image_normalized)
+            cv2.waitKey(10)
             
 # Save the data to a file
 import pickle
-with open('connectorMO6_viewpoints_45.pkl', 'wb') as f:
+with open(viewpoint_filename, 'wb') as f:
     pickle.dump(data, f)
     
     
 cv2.destroyAllWindows()
-nvisii_utils.deinitialize_nvisii()
+nvisii_helper.deinitialize_nvisii()

@@ -255,7 +255,7 @@ def resize_images_to_same_size(image1_array, image2_array):
 #     #translation_cad = [-0.2,-0.1,0.5]
         
 #     if np.linalg.norm(orientation) != 0:
-#         theta = np.linalg.norm(orientation)
+#         theta = np.linalg.norm(orientation)axis_angle_to_quaternion
 #         axis = orientation/theta
 #     else:
 #         theta = 2*np.pi #identity
