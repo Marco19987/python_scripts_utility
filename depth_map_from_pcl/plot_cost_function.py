@@ -124,9 +124,11 @@ translation_real = np.array([0,0,0.7]) # position of the object in meters wrt ca
 import random
 phi, theta, psi = random.uniform(0, np.pi), random.uniform(0, np.pi), random.uniform(0, 2*np.pi)
 # round phi to the nearest 20 degrees step
-phi = round(phi / (20*np.pi/180)) * (20*np.pi/180)
-theta = round(theta / (20*np.pi/180)) * (20*np.pi/180)
-psi = round(psi / (20*np.pi/180)) * (20*np.pi/180)
+# step = 50*np.pi/180
+# phi = round(phi / step) * step
+# theta = round(theta / step) * step
+# psi = round(psi / step) * step
+
 orientation_real = np.array([phi, theta, psi])
 rtheta = geometric_helper.axis_angle_viewpoint(phi,theta,psi)
 axis, angle = geometric_helper.axis_angle_from_vector(rtheta)
