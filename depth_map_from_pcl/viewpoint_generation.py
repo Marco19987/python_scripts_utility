@@ -6,7 +6,7 @@ import image_helper as image_helper
 import nvisii_helper as nvisii_helper
 
 # File to save the viewpoint data
-viewpoint_filename = "connectorMO6_viewpoints_45.pkl"
+viewpoint_filename = "banana_viewpoints_20aa.pkl"
 
 # Initialization of intrinsic and extrinsic parameters
 focal_length_x = 610.0  # Focal length in pixels (along X-axis)
@@ -20,7 +20,7 @@ camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_p
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/connectorMO6.obj"  
+file_name = "cad_models/banana.obj"  
 mesh_scale = 0.01 #0.01 banana
 
 
@@ -28,7 +28,7 @@ max_virtual_depth = 5 #[m]
 
 
 # Pose object
-translation = np.array([0,0,0.2]) # position of the object in meters wrt camera
+translation = np.array([0,0,0.7]) # position of the object in meters wrt camera
 euler_angles = [0,0,0] # radians - roll pitch and yaw
 quaternion_real = geometric_helper.euler_to_quaternion(euler_angles)
 
@@ -43,24 +43,24 @@ depth_map, object_pixels = image_helper.generate_depth_map(object_name,translati
 
 # creat a three numpy array that range from -pi to pi with specified step_size
 step_size = 20*np.pi/180
-phi_array = np.arange(0, 2*np.pi, step_size)
-theta_array = np.arange(-np.pi, np.pi, step_size)
-psi_array = np.arange(2*np.pi, 4*np.pi,  step_size)
+phi_array = np.arange(0+step_size,np.pi-step_size, step_size)
+theta_array = np.arange(0+step_size, np.pi-step_size, step_size)
+psi_array = np.arange(0+step_size, 2*np.pi-step_size,  step_size)
 
 # iterate over the three arrays and generate for each the obj_depth_image
 number_of_iteration = 0
 number_of_iterations = len(theta_array) * len(phi_array) * len(psi_array)
 data = []
-import pdb
 
 for phi in phi_array:
     for theta in theta_array:
         for psi in psi_array:
             #quaternion = geometric_helper.euler_to_quaternion([phi,theta,psi])
-            axis, angle = geometric_helper.axis_angle_from_vector(geometric_helper.axis_angle_viewpoint(phi,theta,6.28 + 0*psi))
-            #breakpoint()
+            axis, angle = geometric_helper.axis_angle_from_vector(geometric_helper.axis_angle_viewpoint(phi,theta,psi))
+
+            
             quaternion = geometric_helper.axis_angle_to_quaternion(axis, angle)
-            #quaternion = np.concatenate((axis, [angle]))
+            
             # Generate the depth map
             depth_map, object_pixels = image_helper.generate_depth_map(object_name,translation, quaternion, mesh_scale, camera_intrinsics, max_virtual_depth)
             # crop object image

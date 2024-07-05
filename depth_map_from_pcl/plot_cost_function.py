@@ -16,7 +16,6 @@ import nvisii_helper as nvisii_helper
 
 def compute_cost(resized_image1_array, resized_image2_array, real_obj_image, cad_obj_image):
 
-
     h_image,w_image = resized_image1_array.shape  
 
     aspect_ratio_real = real_obj_image.shape[1] / real_obj_image.shape[0]
@@ -82,7 +81,7 @@ camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_p
 
 
 # Load the pre-generated viewpoints from the file
-viewpoint_file = 'connectorMO6_viewpoints_45aa.pkl'
+viewpoint_file = 'viewpoints_data/banana_viewpoints_20aa.pkl'
 visualize_viewpoints = False
 
 with open(viewpoint_file, 'rb') as f:
@@ -108,7 +107,7 @@ if visualize_viewpoints:
 
 # Load real object file
 object_name = "banana"
-file_name = "cad_models/connectorMO6.obj"  
+file_name = "cad_models/banana.obj"  
 mesh_scale_real = 0.01 #0.01 banana
 max_virtual_depth = 5 #[m]
 
@@ -116,12 +115,23 @@ max_virtual_depth = 5 #[m]
 ############## generate depth image of the real object ####################################################
 
 # Pose real object
-translation_real = np.array([0,0,0.2]) # position of the object in meters wrt camera
-euler_angles_real = [0,0,0] # radians - roll pitch and yaw
-
+translation_real = np.array([0,0,0.7]) # position of the object in meters wrt camera
+# orientation_real = [0.1,0.2,0.1] # radians - roll pitch and yaw
 # import random
-# euler_angles = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
-quaternion_real = geometric_helper.euler_to_quaternion(euler_angles_real)#[0,0.5,0.5,0]  
+# orientation_real = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
+# quaternion_real = geometric_helper.euler_to_quaternion(orientation_real)#[0,0.5,0.5,0]  
+
+import random
+phi, theta, psi = random.uniform(0, np.pi), random.uniform(0, np.pi), random.uniform(0, 2*np.pi)
+# round phi to the nearest 20 degrees step
+phi = round(phi / (20*np.pi/180)) * (20*np.pi/180)
+theta = round(theta / (20*np.pi/180)) * (20*np.pi/180)
+psi = round(psi / (20*np.pi/180)) * (20*np.pi/180)
+orientation_real = np.array([phi, theta, psi])
+rtheta = geometric_helper.axis_angle_viewpoint(phi,theta,psi)
+axis, angle = geometric_helper.axis_angle_from_vector(rtheta)
+quaternion_real = geometric_helper.axis_angle_to_quaternion(axis, angle)
+
 
 # initialize nvisii
 interactive = False
@@ -197,7 +207,7 @@ index_min = np.argmin(costs)
 
 sort_cost = np.sort(costs)
 print("First ten costs", sort_cost[:10])
-cost_min = sort_cost[1]
+cost_min = sort_cost[0]
 index_min = np.where(costs == cost_min)[0][0]
 
 print("index_min", index_min)
@@ -244,9 +254,9 @@ ax3.axvline(index_min, color='r', linestyle='--', label='Minimum cost')
 ax4.axvline(index_min, color='r', linestyle='--', label='Minimum cost')
 
 # plot a vertical axis in correspondence of the groudn truth orientation
-ax2.axhline(euler_angles_real[0], color='g', linestyle='--', label='Real orientation')
-ax3.axhline(euler_angles_real[1], color='g', linestyle='--', label='Real orientation')
-ax4.axhline(euler_angles_real[2], color='g', linestyle='--', label='Real orientation')
+ax2.axhline(orientation_real[0], color='g', linestyle='--', label='Real orientation')
+ax3.axhline(orientation_real[1], color='g', linestyle='--', label='Real orientation')
+ax4.axhline(orientation_real[2], color='g', linestyle='--', label='Real orientation')
 
 
 plt.savefig('cost_function.png')
@@ -260,26 +270,20 @@ from scipy.interpolate import griddata
 # Create a figure with 3 subplots (3D plots)
 fig = plt.figure(figsize=(18, 6))
 
-# Prepare data for interpolation
-euler_angles = np.array([element['orientation'] for element in selected_data])
-# costs = np.array([compute_cost(resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[0],
-#                                resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[1])
-#                   for element in selected_data])
-
 # Define meshgrid resolution
 grid_resolution = 100j
 # Subplot 1: Fix the first orientation, vary the other two
 ax1 = fig.add_subplot(131, projection='3d')
-grid_x1, grid_y1 = np.mgrid[min(euler_angles[:,1]):max(euler_angles[:,1]):grid_resolution, min(euler_angles[:,2]):max(euler_angles[:,2]):grid_resolution]
+grid_x1, grid_y1 = np.mgrid[min(orientation_angles[:,1]):max(orientation_angles[:,1]):grid_resolution, min(orientation_angles[:,2]):max(orientation_angles[:,2]):grid_resolution]
 
-unique_elements, counts = np.unique(euler_angles[:,0], return_counts=True)
+unique_elements, counts = np.unique(orientation_angles[:,0], return_counts=True)
 element_index = np.where(unique_elements == orientation2[0])[0][0]
 element = unique_elements[element_index]
-indices = np.array(np.where(euler_angles[:,0] == element)).T
-grid_z1 = griddata(euler_angles[indices,1:3].reshape(counts[element_index],2), costs[indices], (grid_x1, grid_y1), method='cubic')
+indices = np.array(np.where(orientation_angles[:,0] == element)).T
+grid_z1 = griddata(orientation_angles[indices,1:3].reshape(counts[element_index],2), costs[indices], (grid_x1, grid_y1), method='cubic')
 grid_z1 = np.squeeze(grid_z1[:, :, 0])
 
-# grid_z1 = griddata(euler_angles[:,1:3], costs, (grid_x1, grid_y1), method='cubic')
+# grid_z1 = griddata(orientation_angles[:,1:3], costs, (grid_x1, grid_y1), method='cubic')
 ax1.plot_surface(grid_x1, grid_y1, grid_z1, cmap='viridis', edgecolor='none')
 ax1.set_title('Fixed Orientation 1')
 ax1.set_xlabel('Orientation 2')
@@ -288,16 +292,16 @@ ax1.set_zlabel('Cost')
 
 # Subplot 2: Fix the second orientation, vary the others
 ax2 = fig.add_subplot(132, projection='3d')
-grid_x2, grid_y2 = np.mgrid[min(euler_angles[:,0]):max(euler_angles[:,0]):grid_resolution, min(euler_angles[:,2]):max(euler_angles[:,2]):grid_resolution]
-unique_elements, counts = np.unique(euler_angles[:,1], return_counts=True)
+grid_x2, grid_y2 = np.mgrid[min(orientation_angles[:,0]):max(orientation_angles[:,0]):grid_resolution, min(orientation_angles[:,2]):max(orientation_angles[:,2]):grid_resolution]
+unique_elements, counts = np.unique(orientation_angles[:,1], return_counts=True)
 element_index = np.where(unique_elements == orientation2[1])[0][0]
 element = unique_elements[element_index]
-indices = np.array(np.where(euler_angles[:,1] == element)).T
-angles_2 = euler_angles[indices, :].reshape(counts[element_index], 3)
+indices = np.array(np.where(orientation_angles[:,1] == element)).T
+angles_2 = orientation_angles[indices, :].reshape(counts[element_index], 3)
 grid_z2 = griddata(angles_2[:,[0,2]], costs[indices], (grid_x2, grid_y2), method='cubic')
 grid_z2 = np.squeeze(grid_z2[:, :, 0])
 
-#grid_z2 = griddata(euler_angles[:,[0,2]], costs, (grid_x2, grid_y2), method='cubic')
+#grid_z2 = griddata(orientation_angles[:,[0,2]], costs, (grid_x2, grid_y2), method='cubic')
 ax2.plot_surface(grid_x2, grid_y2, grid_z2, cmap='viridis', edgecolor='none')
 ax2.set_title('Fixed Orientation 2')
 ax2.set_xlabel('Orientation 1')
@@ -306,15 +310,15 @@ ax2.set_zlabel('Cost')
 
 # Subplot 3: Fix the third orientation, vary the others
 ax3 = fig.add_subplot(133, projection='3d')
-grid_x3, grid_y3 = np.mgrid[min(euler_angles[:,0]):max(euler_angles[:,0]):grid_resolution, min(euler_angles[:,1]):max(euler_angles[:,1]):grid_resolution]
-unique_elements, counts = np.unique(euler_angles[:,2], return_counts=True)
+grid_x3, grid_y3 = np.mgrid[min(orientation_angles[:,0]):max(orientation_angles[:,0]):grid_resolution, min(orientation_angles[:,1]):max(orientation_angles[:,1]):grid_resolution]
+unique_elements, counts = np.unique(orientation_angles[:,2], return_counts=True)
 element_index = np.where(unique_elements == orientation2[2])[0][0]
 element = unique_elements[element_index]
-indices = np.array(np.where(euler_angles[:,2] == element)).T
-grid_z3 = griddata(euler_angles[indices,0:2].reshape(counts[element_index],2), costs[indices], (grid_x3, grid_y3), method='cubic')
+indices = np.array(np.where(orientation_angles[:,2] == element)).T
+grid_z3 = griddata(orientation_angles[indices,0:2].reshape(counts[element_index],2), costs[indices], (grid_x3, grid_y3), method='cubic')
 grid_z3 = np.squeeze(grid_z3[:, :, 0])
 
-#grid_z3 = griddata(euler_angles[:,0:2], costs, (grid_x3, grid_y3), method='cubic')
+#grid_z3 = griddata(orientation_angles[:,0:2], costs, (grid_x3, grid_y3), method='cubic')
 ax3.plot_surface(grid_x3, grid_y3, grid_z3, cmap='viridis', edgecolor='none')
 ax3.set_title('Fixed Orientation 3')
 ax3.set_xlabel('Orientation 1')
@@ -326,24 +330,51 @@ ax1.scatter(orientation2[1], orientation2[2], cost_min, color='red', s=100)
 ax2.scatter(orientation2[0], orientation2[2], cost_min, color='red', s=100)
 ax3.scatter(orientation2[0], orientation2[1], cost_min, color='red', s=100)
 
-# find the nearest orientation to the real one
-cost_near_real = 1000
-ori_diff = []
-for element in selected_data:
-    ori_diff.append(np.linalg.norm(np.array(element['orientation']) - np.array(euler_angles_real)))
+step_size = 0.1
+plot_array = np.arange(0, 1, step_size)
+for i in plot_array:
+    ax1.scatter(orientation_real[1], orientation_real[2], i, color='blue', s=10)
+    ax2.scatter(orientation_real[0], orientation_real[2], i, color='blue', s=10)
+    ax3.scatter(orientation_real[0], orientation_real[1], i, color='blue', s=10)
 
-index_min = np.argmin(ori_diff) 
-cost_near_real = costs[index_min]    
 
-ax1.scatter(euler_angles_real[1], euler_angles_real[2], cost_near_real, color='blue', s=100)
-ax2.scatter(euler_angles_real[0], euler_angles_real[2], cost_near_real, color='blue', s=100)
-ax3.scatter(euler_angles_real[0], euler_angles_real[1], cost_near_real, color='blue', s=100)
+# plot a vertical axis in correspondence of hte groudn truth orientation
+
+# ax1.scatter(orientation_real[1], orientation_real[2], cost_near_real, color='blue', s=100)
+# ax2.scatter(orientation_real[0], orientation_real[2], cost_near_real, color='blue', s=100)
+# ax3.scatter(orientation_real[0], orientation_real[1], cost_near_real, color='blue', s=100)
 
 plt.tight_layout()  # Adjust subplots to fit into the figure area.
 plt.savefig('cost_function_3d_continuous_all.png')
 plt.show()
 
+# make a 3d plot with the points in element['orientation'] and the color of the points based on the cost
+# Normalize costs for color mapping
+import matplotlib.cm as cm
+import matplotlib.colors as colors
+norm = colors.Normalize(vmin=np.min(costs), vmax=np.max(costs))
+cmap = cm.ScalarMappable(norm=norm, cmap='viridis') 
 
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+ax.scatter(orientation2[0], orientation2[1], orientation2[2], color='red', s=100)
+
+for i, element in enumerate(selected_data):
+    orientation = element['orientation']
+    rtheta = geometric_helper.axis_angle_viewpoint(orientation[0], orientation[1], orientation[2])
+    cost = costs[i]
+    #ax.scatter(rtheta[0], rtheta[1], rtheta[2], color=cmap.to_rgba(cost))
+    ax.scatter(orientation[0], orientation[1], orientation[2], color=cmap.to_rgba(cost))
+
+ax.scatter(orientation_real[0], orientation_real[1], orientation_real[2], color='blue', s=100)
+
+
+ax.set_xlabel('X Label')
+ax.set_ylabel('Y Label')
+ax.set_zlabel('Z Label')
+
+plt.show()
 
 cv2.destroyAllWindows()
 nvisii.deinitialize()

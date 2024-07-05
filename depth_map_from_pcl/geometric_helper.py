@@ -233,9 +233,9 @@ def axis_angle_viewpoint(phi, theta, psi):
     # phi is the angle of the versor in the xy plane
     # theta is the angle of the versor with the z axis
     # psi is the angle of rotation around the versor
-    rx = np.cos(theta) * np.cos(phi) 
-    ry = np.cos(theta) * np.sin(phi)
-    rz = np.sin(theta)
+    rx = np.sin(theta) * np.cos(phi) 
+    ry = np.sin(theta) * np.sin(phi)
+    rz = np.cos(theta)
     rpsi = np.array([rx, ry, rz]) * psi
     return rpsi
 
