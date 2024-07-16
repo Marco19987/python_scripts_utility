@@ -41,6 +41,9 @@ def orientation_cost_function(orientation,object_name,translation_cad, mesh_scal
     cv2.imshow("Cad model", resized_image2_array)
     cv2.waitKey(0)
 
+    indipendent_vars.append(orientation)
+    indipendent_cost.append(cost)
+
     return cost
 
 def compute_cost(resized_image1_array, resized_image2_array):
@@ -111,7 +114,7 @@ camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_p
 
 
 # Load the pre-generated viewpoints from the file
-viewpoint_file = 'viewpoints_data/banana_viewpoints_20aa.pkl'
+viewpoint_file = 'viewpoints_data/bowl_viewpoints_20aa.pkl'
 
 with open(viewpoint_file, 'rb') as f:
     data = pickle.load(f)
@@ -120,8 +123,8 @@ with open(viewpoint_file, 'rb') as f:
 
 # Load real object file
 object_name_real = "banana"
-file_name = "cad_models/banana.obj"  
-mesh_scale_real = 0.01 #0.01 banana
+file_name = "cad_models/bowl.obj"  
+mesh_scale_real = 0.001 #0.01 banana
 max_virtual_depth = 5 #[m]
 
 
@@ -132,8 +135,8 @@ translation_real = np.array([0,0,1]) # position of the object in meters wrt came
 
 
 import random
-phi, theta, psi = random.uniform(0, np.pi), random.uniform(0, np.pi), random.uniform(0, 2*np.pi)
-# phi, theta, psi = 1,1,1
+#phi, theta, psi = random.uniform(0, np.pi), random.uniform(0, np.pi), random.uniform(0, 2*np.pi)
+phi, theta, psi = 1,1,1
 
 
 orientation_real = np.array([phi, theta, psi])
@@ -208,7 +211,7 @@ print("initial guess", orientation2)
 
 # load model object
 object_name_cad = "banana2"
-new_object_path = "cad_models/banana.obj"
+new_object_path = "cad_models/bowl.obj"
 mesh_scale_cad = mesh_scale_real*1
 
 nvisii_helper.change_object_mesh(object_name_real, object_name_cad, new_object_path)
@@ -219,6 +222,9 @@ Rinit = geometric_helper.normalize_rotation_matrix(Rinit)
 
 
 initial_guesses = [[orientation2]]#[[0,1.57, 0]]
+# debug cost variables
+indipendent_vars = []
+indipendent_cost = []
 
 bnds = [(0, np.pi), (0, np.pi), (0, 2*np.pi)]
 # bnds = [(orientation2[0]-0.5, orientation2[0]+0.5), (orientation2[1]-0.5, orientation2[1]+0.5), (orientation2[2]-0.5, orientation2[2]+0.5)]
@@ -245,6 +251,108 @@ result = optimize(initial_guesses)
 #     result_cost.append(result.fun)
 #     results_array.append(result.x)
 
+########## plot cost function
+
+from scipy.interpolate import griddata
+orientation_angles = np.array([element['orientation'] for element in selected_data])
+
+# Create a figure with 3 subplots (3D plots)
+fig = plt.figure(figsize=(18, 6))
+
+# Define meshgrid resolution
+grid_resolution = 100j
+# Subplot 1: Fix the first orientation, vary the other two
+ax1 = fig.add_subplot(131, projection='3d')
+grid_x1, grid_y1 = np.mgrid[min(orientation_angles[:,1]):max(orientation_angles[:,1]):grid_resolution, min(orientation_angles[:,2]):max(orientation_angles[:,2]):grid_resolution]
+
+unique_elements, counts = np.unique(orientation_angles[:,0], return_counts=True)
+element_index = np.where(unique_elements == orientation2[0])[0][0]
+element = unique_elements[element_index]
+indices = np.array(np.where(orientation_angles[:,0] == element)).T
+grid_z1 = griddata(orientation_angles[indices,1:3].reshape(counts[element_index],2), costs[indices], (grid_x1, grid_y1), method='cubic')
+grid_z1 = np.squeeze(grid_z1[:, :, 0])
+
+# grid_z1 = griddata(orientation_angles[:,1:3], costs, (grid_x1, grid_y1), method='cubic')
+ax1.plot_surface(grid_x1, grid_y1, grid_z1, cmap='viridis', edgecolor='none')
+ax1.set_title('Fixed Orientation 1')
+ax1.set_xlabel('Orientation 2')
+ax1.set_ylabel('Orientation 3')
+ax1.set_zlabel('Cost')
+
+# Subplot 2: Fix the second orientation, vary the others
+ax2 = fig.add_subplot(132, projection='3d')
+grid_x2, grid_y2 = np.mgrid[min(orientation_angles[:,0]):max(orientation_angles[:,0]):grid_resolution, min(orientation_angles[:,2]):max(orientation_angles[:,2]):grid_resolution]
+unique_elements, counts = np.unique(orientation_angles[:,1], return_counts=True)
+element_index = np.where(unique_elements == orientation2[1])[0][0]
+element = unique_elements[element_index]
+indices = np.array(np.where(orientation_angles[:,1] == element)).T
+angles_2 = orientation_angles[indices, :].reshape(counts[element_index], 3)
+grid_z2 = griddata(angles_2[:,[0,2]], costs[indices], (grid_x2, grid_y2), method='cubic')
+grid_z2 = np.squeeze(grid_z2[:, :, 0])
+
+#grid_z2 = griddata(orientation_angles[:,[0,2]], costs, (grid_x2, grid_y2), method='cubic')
+ax2.plot_surface(grid_x2, grid_y2, grid_z2, cmap='viridis', edgecolor='none')
+ax2.set_title('Fixed Orientation 2')
+ax2.set_xlabel('Orientation 1')
+ax2.set_ylabel('Orientation 3')
+ax2.set_zlabel('Cost')
+
+# Subplot 3: Fix the third orientation, vary the others
+ax3 = fig.add_subplot(133, projection='3d')
+grid_x3, grid_y3 = np.mgrid[min(orientation_angles[:,0]):max(orientation_angles[:,0]):grid_resolution, min(orientation_angles[:,1]):max(orientation_angles[:,1]):grid_resolution]
+unique_elements, counts = np.unique(orientation_angles[:,2], return_counts=True)
+element_index = np.where(unique_elements == orientation2[2])[0][0]
+element = unique_elements[element_index]
+indices = np.array(np.where(orientation_angles[:,2] == element)).T
+grid_z3 = griddata(orientation_angles[indices,0:2].reshape(counts[element_index],2), costs[indices], (grid_x3, grid_y3), method='cubic')
+grid_z3 = np.squeeze(grid_z3[:, :, 0])
+
+#grid_z3 = griddata(orientation_angles[:,0:2], costs, (grid_x3, grid_y3), method='cubic')
+ax3.plot_surface(grid_x3, grid_y3, grid_z3, cmap='viridis', edgecolor='none')
+ax3.set_title('Fixed Orientation 3')
+ax3.set_xlabel('Orientation 1')
+ax3.set_ylabel('Orientation 2')
+ax3.set_zlabel('Cost')
+
+# in each subplot, plot the initial guess and the real solution
+ax1.scatter(orientation2[1], orientation2[2], cost_min, color='red', s=100)
+ax2.scatter(orientation2[0], orientation2[2], cost_min, color='red', s=100)
+ax3.scatter(orientation2[0], orientation2[1], cost_min, color='red', s=100)
+
+step_size = 0.1
+plot_array = np.arange(0, 1, step_size)
+for i in plot_array:
+    ax1.scatter(orientation_real[1], orientation_real[2], i, color='blue', s=10)
+    ax2.scatter(orientation_real[0], orientation_real[2], i, color='blue', s=10)
+    ax3.scatter(orientation_real[0], orientation_real[1], i, color='blue', s=10)
+    ax1.scatter(result.x[1], result.x[2], i, color='black', s=10)
+    ax2.scatter(result.x[0], result.x[2], i, color='black', s=10)
+    ax3.scatter(result.x[0], result.x[1], i, color='black', s=10)
+
+
+# plot indipendent varuiables and cost 
+for i,element in enumerate(indipendent_vars):
+    ax1.scatter(element[1], element[2], indipendent_cost[i], color='green', s=50)
+    ax2.scatter(element[0], element[2], indipendent_cost[i], color='green', s=50)
+    ax3.scatter(element[0], element[1], indipendent_cost[i], color='green', s=50)
+
+ax1.scatter(result.x[1], result.x[2], result.fun, color='black', s=100) 
+ax2.scatter(result.x[0], result.x[2], result.fun, color='black', s=100) 
+ax3.scatter(result.x[0], result.x[1], result.fun, color='black', s=100) 
+
+
+
+
+
+plt.tight_layout()  # Adjust subplots to fit into the figure area.
+plt.savefig('cost_function_3d_continuous_all.png')
+plt.show()
+
+
+
+
+
+###############################
 
 ################### RESULT ELABORATION ####################################################################
     
@@ -260,13 +368,13 @@ quaternion2 = geometric_helper.axis_angle_to_quaternion(axis, angle)
 depth_map2, object_pixels2 = image_helper.generate_depth_map(object_name_cad,translation_cad, quaternion2, mesh_scale_cad, camera_intrinsics, max_virtual_depth)
 obj_depth_image2 = image_helper.crop_object_image(depth_map2,object_pixels2)
 obj_depth_image2_normalized = image_helper.normalize_depth_map(obj_depth_image2)    
-cv2.imshow("depth_map2", depth_map2)
+# cv2.imshow("depth_map2", depth_map2)
 
 
 # Retrieve objects point clouds and resample them to get two ordered point clouds
 resized_image_real_object, resized_image_cad_model = image_helper.resize_images_to_same_size(obj_depth_image, obj_depth_image2)
-cv2.imshow("resized_image_real_object", image_helper.normalize_depth_map(resized_image_real_object))
-cv2.imshow("resized_image_cad_model", image_helper.normalize_depth_map(resized_image_cad_model))
+# cv2.imshow("resized_image_real_object", image_helper.normalize_depth_map(resized_image_real_object))
+# cv2.imshow("resized_image_cad_model", image_helper.normalize_depth_map(resized_image_cad_model))
 
 res_height,res_width = resized_image_real_object.shape
 resampled_depth_map_real = image_helper.resample_depth_map(depth_map, object_pixels,res_width,res_height)

@@ -1,4 +1,8 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import nvisii
+import math
+import cv2
 
 
 def convert_from_uvd(h, w, d, fx, fy, cx, cy):
@@ -9,7 +13,6 @@ def convert_from_uvd(h, w, d, fx, fy, cx, cy):
     return z
 
 def generate_depth_map(object_name, position, quaternion, mesh_scale, camera_instrinsics, max_virtual_depth):
-    import nvisii
     obj_mesh = nvisii.entity.get(object_name)
 
     # rotation camera color frame to nvisii frame Rx(pi)
@@ -65,7 +68,6 @@ def generate_depth_map(object_name, position, quaternion, mesh_scale, camera_ins
     return virtual_depth_array[:,:,0], object_pixels
 
 def depth_to_pointcloud(depth_map, camera_intrinsics, object_pixels):
-    import math
     # generate point cloud from depth_map
     # px = (X − cx)pz /fx, py = (Y − cy )pz /y
     
@@ -110,7 +112,6 @@ def depth_to_pointcloud_fromlist(depth_map, camera_intrinsics):
     return point_cloud
 
 def plot_pointcloud(point_cloud, title):
-    import matplotlib.pyplot as plt
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     xs = [point[0] for point in point_cloud]
@@ -146,7 +147,6 @@ def resample_depth_map(depth_map, object_pixels,width,height):
 
 
 def resize_images_to_same_size(image1_array, image2_array):
-    import cv2
     """
     Resize two images (given as numpy arrays) to the same size, based on the smaller dimensions of the two.
     
@@ -184,7 +184,7 @@ def resize_images_to_same_size(image1_array, image2_array):
             new_height = int((width_2 / width_1) * height_1)
             
         
-        resized_image_1 = cv2.resize(image1_array,(new_width, new_height), interpolation=cv2.INTER_NEAREST)
+        resized_image_1 = cv2.resize(image1_array,(new_width, new_height), interpolation=cv2.INTER_AREA)
         not_resized_image = image2_array
         image_resized_index = 0 # image 1 resized
 
@@ -200,7 +200,7 @@ def resize_images_to_same_size(image1_array, image2_array):
             new_height = int((width_1 / width_2) * height_2)
             
                     
-        resized_image_1 = cv2.resize(image2_array,(new_width,new_height), interpolation=cv2.INTER_NEAREST)
+        resized_image_1 = cv2.resize(image2_array,(new_width,new_height), interpolation=cv2.INTER_AREA) #INTER_AREA
         not_resized_image = image1_array
         image_resized_index = 1 # image 2 resized
 

@@ -6,7 +6,7 @@ import image_helper as image_helper
 import nvisii_helper as nvisii_helper
 
 # File to save the viewpoint data
-viewpoint_filename = "banana_viewpoints_20aa.pkl"
+viewpoint_filename = "bowl_viewpoints_20aa.pkl"
 
 # Initialization of intrinsic and extrinsic parameters
 focal_length_x = 610.0  # Focal length in pixels (along X-axis)
@@ -20,8 +20,8 @@ camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_p
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/banana.obj"  
-mesh_scale = 0.01 #0.01 banana
+file_name = "cad_models/bowl.obj"  
+mesh_scale = 0.001 #0.01 banana
 
 
 max_virtual_depth = 5 #[m]

@@ -1,4 +1,5 @@
 import numpy as np
+import trimesh
 
 def quaternion_to_rotation_matrix(q):
     """
@@ -210,7 +211,6 @@ def continuos_representation(A):
 
 
 def read_obj_file(file_name):
-    import trimesh
     try:
         # Read the OBJ file
         mesh = trimesh.load(file_name)

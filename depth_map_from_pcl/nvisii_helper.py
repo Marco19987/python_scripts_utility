@@ -1,6 +1,7 @@
+import nvisii
 
 def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path):
-    import nvisii
+   
     nvisii.initialize(headless= not interactive, verbose=True)
     nvisii.disable_updates()
     # nvisii.disable_denoiser()
@@ -43,7 +44,7 @@ def initialize_nvisii(interactive, camera_intrinsics, object_name, obj_file_path
     return 
 
 def change_object_mesh(old_object_name, new_object_name,obj_file_path):
-    import nvisii
+   
     camera = nvisii.entity.get("camera")
    
     nvisii.entity.remove(old_object_name)
@@ -59,6 +60,5 @@ def change_object_mesh(old_object_name, new_object_name,obj_file_path):
     return 
 
 def deinitialize_nvisii():
-    import nvisii
     nvisii.deinitialize()
     return
