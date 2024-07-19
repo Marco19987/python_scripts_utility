@@ -5,29 +5,29 @@ import image_helper as image_helper
 import nvisii_helper as nvisii_helper
 
 # File to save the viewpoint data
-viewpoint_filename = "hammer_viewpoints_20aa.pkl"
+viewpoint_filename = "banana_viewpoints_cont_repr_05.pkl"
 
 # Initialization of intrinsic and extrinsic parameters
 focal_length_x = 610.0  # Focal length in pixels (along X-axis)
 focal_length_y = 610.0  # Focal length in pixels (along Y-axis)
 principal_point_x = 317.0  # Principal point offset along X-axis (in pixels)
 principal_point_y = 238.0  # Principal point offset along Y-axis (in pixels)
-image_height = 480
-image_width = 640
+image_height = 200
+image_width = 200
 camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_point_y,image_width,image_height]
 
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/hammer.obj"  
-mesh_scale = 1 #0.01 banana
+file_name = "cad_models/banana.obj"  
+mesh_scale = 0.01 #0.01 banana
 
 
 max_virtual_depth = 5 #[m]
 
 
 # Pose object
-translation = np.array([0,0,1]) # position of the object in meters wrt camera
+translation = np.array([-0.3,-0.2,1]) # position of the object in meters wrt camera
 euler_angles = [0,0,0] # radians - roll pitch and yaw
 quaternion_real = geometric_helper.euler_to_quaternion(euler_angles)
 
@@ -41,7 +41,7 @@ depth_map, object_pixels = image_helper.generate_depth_map(object_name,translati
 
 
 # creat a three numpy array that range from -pi to pi with specified step_size
-step_size = 20*np.pi/180
+step_size = 8*np.pi/180
 phi_array = np.arange(0+step_size,np.pi-step_size, step_size)
 theta_array = np.arange(0+step_size, np.pi-step_size, step_size)
 psi_array = np.arange(0+step_size, 2*np.pi-step_size,  step_size)
@@ -50,6 +50,7 @@ psi_array = np.arange(0+step_size, 2*np.pi-step_size,  step_size)
 number_of_iteration = 0
 number_of_iterations = len(theta_array) * len(phi_array) * len(psi_array)
 data = []
+
 
 for phi in phi_array:
     for theta in theta_array:
@@ -73,18 +74,25 @@ for phi in phi_array:
             print("image size [byte]", len(object_pixels)*4)
             print("iteration", number_of_iteration, "out of", number_of_iterations)
             
-            
+            # additional things 
+            depth_map = image_helper.normalize_depth_map(depth_map)
+            R = geometric_helper.quaternion_to_rotation_matrix(quaternion)
+            A = geometric_helper.continuos_representation_inverse(R)
+
+
             # Store the data for this iteration
             data.append({
                 'orientation': [phi, theta, psi],
-                'depth_map': obj_depth_image_normalized,
-                'aspect_ratio': aspect_ratio
+                #'depth_map': obj_depth_image_normalized,
+                'depth_map': depth_map,
+                'aspect_ratio': aspect_ratio,
+                'continuos_representation': A
             })
             
             number_of_iteration = number_of_iteration + 1
             
             cv2.imshow("Object image", obj_depth_image_normalized)
-            cv2.waitKey(10)
+            cv2.waitKey(0)
             
 # Save the data to a file
 import pickle

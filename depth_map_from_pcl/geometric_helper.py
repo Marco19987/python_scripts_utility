@@ -198,6 +198,9 @@ def normalize_point_cloud(pcl):
 
 
 def continuos_representation(A):
+    # see On the Continuity of Rotation Representations in Neural Networks Zhou et al.
+    # A is a 3x2 matrix representing a rotation
+    # B is the 3x3 rotation matrix
     b1 = A[:, 0]
     b1 = b1 / np.linalg.norm(b1)
     b2 = A[:, 1] - np.dot(b1.T, A[:, 1]) * b1
@@ -205,6 +208,14 @@ def continuos_representation(A):
     b3 = np.cross(b1, b2)
     B = np.column_stack((b1, b2, b3))
     return B
+
+def continuos_representation_inverse(B):
+    # B represents a rotation matrix 3x3
+    # A is the 3x2 continuos representation of B (see On the Continuity of Rotation Representations in Neural Networks Zhou et al.)
+    a1 = B[:, 0]
+    a2 = (np.cross(B[:, 2], a1)/(np.linalg.norm(a1))) + a1
+    A = np.column_stack((a1, a2)) 
+    return A
 
 
 

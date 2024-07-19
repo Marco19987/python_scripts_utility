@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import pickle
 import cv2
 import numpy as np
-import nvisii 
 from scipy.optimize import minimize, NonlinearConstraint
 from concurrent.futures import ThreadPoolExecutor
 import geometric_helper as geometric_helper
@@ -93,7 +92,7 @@ def compute_cost(resized_image1_array, resized_image2_array, aspect_ratio_real =
     total_cost = cost_both_nan + cost_one_nan + cost_no_nan
 
     # Normalize the cost
-    cost = total_cost / (img1.size) + 1*abs(aspect_ratio_real-aspect_ratio_cad)
+    cost = total_cost / (img1.size) + 0*abs(aspect_ratio_real-aspect_ratio_cad)
 
 
     # evaluate the cost considering also the neighborhood of the pixel
@@ -140,7 +139,7 @@ camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_p
 
 
 # Load the pre-generated viewpoints from the file
-viewpoint_file = 'viewpoints_data/hammer_viewpoints_20aa.pkl'
+viewpoint_file = 'viewpoints_data/banana_viewpoints_20aa.pkl'
 
 with open(viewpoint_file, 'rb') as f:
     data = pickle.load(f)
@@ -149,8 +148,8 @@ with open(viewpoint_file, 'rb') as f:
 
 # Load real object file
 object_name_real = "banana"
-file_name = "cad_models/hammer.obj"  
-mesh_scale_real = 1 #0.01 banana
+file_name = "cad_models/banana.obj"  
+mesh_scale_real = 0.01 #0.01 banana
 max_virtual_depth = 5 #[m]
 
 
@@ -162,7 +161,7 @@ translation_real = np.array([0,0,1]) # position of the object in meters wrt came
 
 import random
 phi, theta, psi = random.uniform(0, np.pi), random.uniform(0, np.pi), random.uniform(0, 2*np.pi)
-#phi, theta, psi = 1.57,1.57,1.57
+phi, theta, psi = 1.51843645,1.48352986,3.44702527
 print("real phi theta psi", phi, theta, psi)
 
 orientation_real = np.array([phi, theta, psi])
@@ -173,7 +172,7 @@ quaternion_real = geometric_helper.axis_angle_to_quaternion(axis, angle)
 
 
 # initialize nvisii
-interactive = True
+interactive = False
 nvisii_helper.initialize_nvisii(interactive, camera_intrinsics,object_name_real, file_name)
 
 # Generate the real depth map
@@ -244,7 +243,7 @@ for i in range(30):
 
 # load model object
 object_name_cad = "banana2"
-new_object_path = "cad_models/hammer.obj"
+new_object_path = "cad_models/banana.obj"
 mesh_scale_cad = mesh_scale_real*1
 
 nvisii_helper.change_object_mesh(object_name_real, object_name_cad, new_object_path)
