@@ -16,50 +16,50 @@ import nvisii_helper as nvisii_helper
 
 def compute_cost(resized_image1_array, resized_image2_array, real_obj_image, cad_obj_image):
 
-    h_image,w_image = resized_image1_array.shape  
+    # h_image,w_image = resized_image1_array.shape  
 
-    aspect_ratio_real = real_obj_image.shape[1] / real_obj_image.shape[0]
-    aspect_ratio_cad = cad_obj_image.shape[1] / cad_obj_image.shape[0]
+    # aspect_ratio_real = real_obj_image.shape[1] / real_obj_image.shape[0]
+    # aspect_ratio_cad = cad_obj_image.shape[1] / cad_obj_image.shape[0]
     
-    cost = 0
-    depth_count = 0
-    for w in range(w_image):
-        for h in range(h_image):
-            d1 = resized_image1_array[h][w]
-            d2 = resized_image2_array[h][w]
+    # cost = 0
+    # depth_count = 0
+    # for w in range(w_image):
+    #     for h in range(h_image):
+    #         d1 = resized_image1_array[h][w]
+    #         d2 = resized_image2_array[h][w]
                         
-            if math.isnan(d1) and math.isnan(d2):  
-                cost = cost + 0.5 # is good
-            else:
-                if math.isnan(d2) or math.isnan(d1):
-                    cost = cost + 1
-                else:
-                    cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
-                    depth_count = depth_count + 1
+    #         if math.isnan(d1) and math.isnan(d2):  
+    #             cost = cost + 0.5 # is good
+    #         else:
+    #             if math.isnan(d2) or math.isnan(d1):
+    #                 cost = cost + 1
+    #             else:
+    #                 cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
+    #                 depth_count = depth_count + 1
 
     
-    diff_aspect_ratio = (aspect_ratio_real - aspect_ratio_cad)**2
-    cost = (cost/(h_image*w_image)) + 0*diff_aspect_ratio
+    # diff_aspect_ratio = (aspect_ratio_real - aspect_ratio_cad)**2
+    # cost = (cost/(h_image*w_image)) + 0*diff_aspect_ratio
     #cost = cost/(depth_count)
     # Convert the images to NumPy arrays
-    # img1 = np.array(resized_image1_array)
-    # img2 = np.array(resized_image2_array)
+    img1 = np.array(resized_image1_array)
+    img2 = np.array(resized_image2_array)
 
-    # # Create masks for the different conditions
-    # both_nan = np.isnan(img1) & np.isnan(img2)
-    # one_nan = np.isnan(img1) ^ np.isnan(img2)
-    # no_nan = ~(np.isnan(img1) | np.isnan(img2))
+    # Create masks for the different conditions
+    both_nan = np.isnan(img1) & np.isnan(img2)
+    one_nan = np.isnan(img1) ^ np.isnan(img2)
+    no_nan = ~(np.isnan(img1) | np.isnan(img2))
 
-    # # Calculate the cost for each condition
-    # cost_both_nan = np.sum(both_nan) * 0.5
-    # cost_one_nan = np.sum(one_nan)
-    # cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
+    # Calculate the cost for each condition
+    cost_both_nan = np.sum(both_nan) * 0.5
+    cost_one_nan = np.sum(one_nan)
+    cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
 
-    # # Calculate the total cost
-    # total_cost = cost_both_nan + cost_one_nan + cost_no_nan
+    # Calculate the total cost
+    total_cost = cost_both_nan + cost_one_nan + cost_no_nan
 
-    # # Normalize the cost
-    # cost = total_cost / (img1.size)
+    # Normalize the cost
+    cost = total_cost / (img1.size)
     
     
     return cost
@@ -81,7 +81,7 @@ camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_p
 
 
 # Load the pre-generated viewpoints from the file
-viewpoint_file = 'viewpoints_data/banana_viewpoints_20aa.pkl'
+viewpoint_file = 'viewpoints_data/rubber_duck_viewpoints_30aa_d.pkl'
 visualize_viewpoints = False
 
 with open(viewpoint_file, 'rb') as f:
@@ -107,15 +107,15 @@ if visualize_viewpoints:
 
 # Load real object file
 object_name = "banana"
-file_name = "cad_models/banana.obj"  
-mesh_scale_real = 0.01 #0.01 banana
+file_name = "cad_models/rubber_duck_toy_1k.gltf"  
+mesh_scale_real = 1 #0.01 banana
 max_virtual_depth = 5 #[m]
 
 
 ############## generate depth image of the real object ####################################################
 
 # Pose real object
-translation_real = np.array([0,0,0.7]) # position of the object in meters wrt camera
+translation_real = np.array([0,0,1.5]) # position of the object in meters wrt camera
 # orientation_real = [0.1,0.2,0.1] # radians - roll pitch and yaw
 # import random
 # orientation_real = [random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi),random.uniform(0, 2*np.pi)]
@@ -123,6 +123,8 @@ translation_real = np.array([0,0,0.7]) # position of the object in meters wrt ca
 
 import random
 phi, theta, psi = random.uniform(0, np.pi), random.uniform(0, np.pi), random.uniform(0, 2*np.pi)
+phi, theta, psi = 0.6,0.4,0.9
+
 # round phi to the nearest 20 degrees step
 # step = 50*np.pi/180
 # phi = round(phi / step) * step
@@ -164,7 +166,7 @@ aspect_ratio_real = obj_depth_image.shape[1] / obj_depth_image.shape[0]
 #data.sort(key=lambda x: abs(x['aspect_ratio'] - aspect_ratio_real))
 
 # Number of elements to select
-N = 5000
+N = 2000
 
 # Select the first N elements
 selected_data = data[:N]

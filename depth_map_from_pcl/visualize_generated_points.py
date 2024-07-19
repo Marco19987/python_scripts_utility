@@ -14,7 +14,7 @@ import nvisii_helper as nvisii_helper
 
 
 # Load the pre-generated viewpoints from the file
-viewpoint_file = 'viewpoints_data/connectorMO6_viewpoints_20aa.pkl'
+viewpoint_file = 'viewpoints_data/rubber_duck_viewpoints_30aa_d.pkl'
 visualize_viewpoints = False
 
 with open(viewpoint_file, 'rb') as f:

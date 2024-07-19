@@ -30,9 +30,17 @@ def orientation_cost_function(orientation,object_name,translation_cad, mesh_scal
     # resize images to the same size
     resized_image1_array, resized_image2_array = image_helper.resize_images_to_same_size(obj_depth_image_normalized, obj_depth_image2_normalized)
         
-    cost = compute_cost(resized_image1_array, resized_image2_array)  
     
-    
+    aspect_ratio_real = obj_depth_image_normalized.shape[1] / obj_depth_image_normalized.shape[0]
+    aspect_ratio_cad = obj_depth_image2_normalized.shape[1] / obj_depth_image2_normalized.shape[0]
+
+    cost = compute_cost(resized_image1_array, resized_image2_array, aspect_ratio_real, aspect_ratio_cad)  
+
+        
+
+    print("aspect ratio real", aspect_ratio_real)
+    print("aspect ratio cad", aspect_ratio_cad)
+
     print("orientation", orientation)
     print("cost value", cost)
     
@@ -46,52 +54,70 @@ def orientation_cost_function(orientation,object_name,translation_cad, mesh_scal
 
     return cost
 
-def compute_cost(resized_image1_array, resized_image2_array):
+def compute_cost(resized_image1_array, resized_image2_array, aspect_ratio_real = 0, aspect_ratio_cad = 0):
 
-    h_image,w_image = resized_image1_array.shape  
-
-   
-    cost = 0
-    depth_count = 0
-    for w in range(w_image):
-        for h in range(h_image):
-            d1 = resized_image1_array[h][w]
-            d2 = resized_image2_array[h][w]
+    # h_image,w_image = resized_image1_array.shape     
+    # cost = 0
+    # for w in range(w_image):
+    #     for h in range(h_image):
+    #         d1 = resized_image1_array[h][w]
+    #         d2 = resized_image2_array[h][w]
                         
-            if math.isnan(d1) and math.isnan(d2):  
-                cost = cost + 0.5 # is good
-            else:
-                if math.isnan(d2) or math.isnan(d1):
-                    cost = cost + 1
-                else:
-                    cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
-                    depth_count = depth_count + 1
+    #         if math.isnan(d1) and math.isnan(d2):  
+    #             cost = cost + 0.5 # is good
+    #         else:
+    #             if math.isnan(d2) or math.isnan(d1):
+    #                 cost = cost + 1
+    #             else:
+    #                 cost = cost + 0*pow((d1-d2),2) + 1*abs(d1-d2)
 
     
-    cost = (cost/(h_image*w_image))
-    #cost = cost/(depth_count)
+    # cost = (cost/(h_image*w_image)) + abs(aspect_ratio_real-aspect_ratio_cad)
+
+    
     # Convert the images to NumPy arrays
-    # img1 = np.array(resized_image1_array)
-    # img2 = np.array(resized_image2_array)
+    img1 = np.array(resized_image1_array)
+    img2 = np.array(resized_image2_array)
 
-    # # Create masks for the different conditions
-    # both_nan = np.isnan(img1) & np.isnan(img2)
-    # one_nan = np.isnan(img1) ^ np.isnan(img2)
-    # no_nan = ~(np.isnan(img1) | np.isnan(img2))
+    # Create masks for the different conditions
+    both_nan = np.isnan(img1) & np.isnan(img2)
+    one_nan = np.isnan(img1) ^ np.isnan(img2)
+    no_nan = ~(np.isnan(img1) | np.isnan(img2))
 
-    # # Calculate the cost for each condition
-    # cost_both_nan = np.sum(both_nan) * 0.5
-    # cost_one_nan = np.sum(one_nan)
-    # cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
+    # Calculate the cost for each condition
+    cost_both_nan = np.sum(both_nan) * 0.5
+    cost_one_nan = np.sum(one_nan)
+    cost_no_nan = np.sum(np.abs(img1[no_nan] - img2[no_nan]))
 
-    # # Calculate the total cost
-    # total_cost = cost_both_nan + cost_one_nan + cost_no_nan
+    # Calculate the total cost
+    total_cost = cost_both_nan + cost_one_nan + cost_no_nan
 
-    # # Normalize the cost
-    # cost = total_cost / (img1.size)
+    # Normalize the cost
+    cost = total_cost / (img1.size) + 1*abs(aspect_ratio_real-aspect_ratio_cad)
+
+
+    # evaluate the cost considering also the neighborhood of the pixel
+    # cost = 0
+    # window_size = 1
+    # for w in range(window_size, w_image - window_size):
+    #     for h in range(window_size, h_image - window_size):
+    #         cost_window = np.sum([pixel_depth_comparison(resized_image1_array[h+i][w+j], resized_image2_array[h+i][w+j]) for i in range(-window_size, window_size+1) for j in range(-window_size, window_size+1)])
+    #         cost += cost_window / (window_size*window_size)
+    # cost /= (h_image - 2*window_size) * (w_image - 2*window_size)
     
-    
+    # print("cc")        
     return cost
+
+
+
+def pixel_depth_comparison(d1,d2):
+    if math.isnan(d1) and math.isnan(d2):  
+        return 0.5 
+    else:
+        if math.isnan(d2) or math.isnan(d1):
+            return 1
+        else:
+            return abs(d1-d2)
 
 
 
@@ -114,7 +140,7 @@ camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_p
 
 
 # Load the pre-generated viewpoints from the file
-viewpoint_file = 'viewpoints_data/bowl_viewpoints_20aa.pkl'
+viewpoint_file = 'viewpoints_data/hammer_viewpoints_20aa.pkl'
 
 with open(viewpoint_file, 'rb') as f:
     data = pickle.load(f)
@@ -123,8 +149,8 @@ with open(viewpoint_file, 'rb') as f:
 
 # Load real object file
 object_name_real = "banana"
-file_name = "cad_models/bowl.obj"  
-mesh_scale_real = 0.001 #0.01 banana
+file_name = "cad_models/hammer.obj"  
+mesh_scale_real = 1 #0.01 banana
 max_virtual_depth = 5 #[m]
 
 
@@ -135,9 +161,9 @@ translation_real = np.array([0,0,1]) # position of the object in meters wrt came
 
 
 import random
-#phi, theta, psi = random.uniform(0, np.pi), random.uniform(0, np.pi), random.uniform(0, 2*np.pi)
-phi, theta, psi = 1,1,1
-
+phi, theta, psi = random.uniform(0, np.pi), random.uniform(0, np.pi), random.uniform(0, 2*np.pi)
+#phi, theta, psi = 1.57,1.57,1.57
+print("real phi theta psi", phi, theta, psi)
 
 orientation_real = np.array([phi, theta, psi])
 rtheta = geometric_helper.axis_angle_viewpoint(phi,theta,psi)
@@ -147,7 +173,7 @@ quaternion_real = geometric_helper.axis_angle_to_quaternion(axis, angle)
 
 
 # initialize nvisii
-interactive = False
+interactive = True
 nvisii_helper.initialize_nvisii(interactive, camera_intrinsics,object_name_real, file_name)
 
 # Generate the real depth map
@@ -174,7 +200,7 @@ aspect_ratio_real = obj_depth_image.shape[1] / obj_depth_image.shape[0]
 #data.sort(key=lambda x: abs(x['aspect_ratio'] - aspect_ratio_real))
 
 # Number of elements to select
-N = 5000
+N = 1000
 
 # Select the first N elements
 selected_data = data[:N]
@@ -182,7 +208,8 @@ selected_data = data[:N]
 # Iterate over each selected element
 index_min = 0
 costs = np.array([compute_cost(image_helper.resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[0],
-                               image_helper.resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[1])
+                               image_helper.resize_images_to_same_size(obj_depth_image_normalized, element['depth_map'])[1]
+                               , aspect_ratio_real, element['aspect_ratio'])
                   for element in selected_data])
 cost_min = np.min(costs)
 index_min = np.argmin(costs)
@@ -190,13 +217,13 @@ index_min = np.argmin(costs)
 
 sort_cost = np.sort(costs)
 print("First ten costs", sort_cost[:10])
-# cost_min = sort_cost[0]
-# index_min = np.where(costs == cost_min)[0][0]
+cost_min = sort_cost[0]
+index_min = np.where(costs == cost_min)[0][0]
 
 print("index_min", index_min)
 print("cost_min", cost_min) 
 depth_cad = selected_data[index_min]['depth_map']
-
+  
 
 cv2.imshow("real object", obj_depth_image_normalized)
 cv2.imshow("cad object", depth_cad)
@@ -206,31 +233,41 @@ cv2.destroyAllWindows()
 orientation2 = selected_data[index_min]['orientation']
 print("initial guess", orientation2)
 
+# # plot the depth map of the first ten costs
+for i in range(30):
+    depth_cad = selected_data[np.where(costs == sort_cost[i])[0][0]]['depth_map']
+    cv2.imshow("cad object", depth_cad)
+    cv2.waitKey(0)
+
 
 #################### OPTIMIZATION ########################################################################
 
 # load model object
 object_name_cad = "banana2"
-new_object_path = "cad_models/bowl.obj"
+new_object_path = "cad_models/hammer.obj"
 mesh_scale_cad = mesh_scale_real*1
 
 nvisii_helper.change_object_mesh(object_name_real, object_name_cad, new_object_path)
-translation_cad = geometric_helper.compute_object_center(object_pixels, 1, camera_intrinsics)
+translation_cad = [0,0,1] #geometric_helper.compute_object_center(object_pixels, 1, camera_intrinsics)
 
 Rinit = geometric_helper.quaternion_to_rotation_matrix(geometric_helper.euler_to_quaternion(orientation2))
 Rinit = geometric_helper.normalize_rotation_matrix(Rinit)
 
+# orientation2[0] = 1
+# orientation2[1] = 2
+# orientation2[2] = 2
 
-initial_guesses = [[orientation2]]#[[0,1.57, 0]]
+initial_guesses = [[orientation2]]
 # debug cost variables
 indipendent_vars = []
 indipendent_cost = []
 
-bnds = [(0, np.pi), (0, np.pi), (0, 2*np.pi)]
-# bnds = [(orientation2[0]-0.5, orientation2[0]+0.5), (orientation2[1]-0.5, orientation2[1]+0.5), (orientation2[2]-0.5, orientation2[2]+0.5)]
+#bnds = [(0, np.pi), (0, np.pi), (0, 2*np.pi)]
+#bnds = [(None, None), (None, None), (None, None)]
+bnds = [(orientation2[0]-np.pi/2, orientation2[0]+np.pi/2), (orientation2[1]-np.pi/2, orientation2[1]+np.pi/2), (orientation2[2]- np.pi, orientation2[2]+ np.pi)]
 def optimize(guess):
-    return minimize(orientation_cost_function, guess,method="SLSQP", bounds=bnds, options={'ftol': 1e-2,'eps':1e-1, 'finite_diff_rel_step' : 1}, args=(object_name_cad,translation_cad, mesh_scale_cad, camera_intrinsics, max_virtual_depth))
- 
+    return minimize(orientation_cost_function, guess,method="SLSQP", bounds=bnds, options={'ftol': 1e-5,'eps':1e-2}, args=(object_name_cad,translation_cad, mesh_scale_cad, camera_intrinsics, max_virtual_depth))
+
  
 result = optimize(initial_guesses)
 
@@ -355,7 +392,7 @@ plt.show()
 ###############################
 
 ################### RESULT ELABORATION ####################################################################
-    
+cv2.destroyAllWindows()
 orientation2 = result.x #results_array[np.argmin(result_cost)]
 
 

@@ -1,12 +1,11 @@
 import numpy as np
 import cv2
-import nvisii
 import geometric_helper as geometric_helper
 import image_helper as image_helper
 import nvisii_helper as nvisii_helper
 
 # File to save the viewpoint data
-viewpoint_filename = "bowl_viewpoints_20aa.pkl"
+viewpoint_filename = "hammer_viewpoints_20aa.pkl"
 
 # Initialization of intrinsic and extrinsic parameters
 focal_length_x = 610.0  # Focal length in pixels (along X-axis)
@@ -20,15 +19,15 @@ camera_intrinsics = [focal_length_x,focal_length_y,principal_point_x,principal_p
 
 # Load file real object
 object_name = "banana"
-file_name = "cad_models/bowl.obj"  
-mesh_scale = 0.001 #0.01 banana
+file_name = "cad_models/hammer.obj"  
+mesh_scale = 1 #0.01 banana
 
 
 max_virtual_depth = 5 #[m]
 
 
 # Pose object
-translation = np.array([0,0,0.7]) # position of the object in meters wrt camera
+translation = np.array([0,0,1]) # position of the object in meters wrt camera
 euler_angles = [0,0,0] # radians - roll pitch and yaw
 quaternion_real = geometric_helper.euler_to_quaternion(euler_angles)
 

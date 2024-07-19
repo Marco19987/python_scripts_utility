@@ -40,7 +40,7 @@ def rotation_matrix_to_quaternion(R):
     """
     Convert a rotation matrix to a quaternion.
     :param R: 3x3 rotation matrix
-    :return: quaternion as [x, y, z, w]
+    :return: quaternion as [w, x, y, z]
     """
     
     q0 = np.sqrt(1 + R[0, 0] + R[1, 1] + R[2, 2]) / 2
